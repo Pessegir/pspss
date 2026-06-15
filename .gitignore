@@ -1,0 +1,9 @@
+# transient logs from test.sh
+/tmp/pspss_*.log
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Note: index.html is a generated bundle but is committed on purpose —
+# it's the single-file playable game and the source-of-last-resort for recovery.
