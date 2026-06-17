@@ -48,6 +48,17 @@ xdg-open index.html        # Linux
 Two modes: **Tenure Track** (satire + real citations) and **Pure P-Hacker** (pure comedy). Plus an
 optional **Preregistration** hard-mode.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Campaign map](screenshots/01-campaign-map.png) **Campaign map** — three gated campaigns + Codex / Sandbox / Quiz / Dashboard. | ![Playing a level](screenshots/02-playing-a-level.png) **Playing a level** — SPSS-parody UI: data view, output with effect size + CI, the QRP menu. |
+| ![Diagnostic figure](screenshots/03-diagnostic-figure.png) **Diagnostic figures** — real SVG plots to read the flaw (here, the confound scatter). | ![Debrief](screenshots/04-debrief-false-positive.png) **The Debrief** — the truth reveal: false positive vs. real-but-invalid, with citation + antidote. |
+| ![Methods Codex](screenshots/05-methods-codex.png) **Methods Codex** — every QRP, its harm, a real case, and the fix. | ![Sandbox Lab](screenshots/06-sandbox-lab.png) **Sandbox Lab** — drag n / effect / SD / prior; watch p or BF react live. |
+| ![Spot the QRP](screenshots/07-spot-the-qrp.png) **Spot the QRP** — find the malpractice in realistic abstracts. | ![Career dashboard](screenshots/08-career-dashboard.png) **Career Dashboard** — publications, retractions, replication rate, achievements. |
+| ![Bayesian level](screenshots/09-bayesian-level.png) **Campaign 3 (Bayesian)** — the metric becomes the Bayes factor; prior-hack it. | ![House rule](screenshots/10-house-rule.png) **House rule** — some finales demand p < .001. |
+| ![Publication](screenshots/11-publication-win.png) **Publication** — significance secured, in an absurd journal. | ![Replication crisis](screenshots/12-replication-crisis.png) **Replication crisis** — years later, your hacked findings evaporate. |
+
 ## Develop
 
 Source is modular in `src/`; `index.html` is generated.

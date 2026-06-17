@@ -269,20 +269,20 @@
       ];
     }
     // tool menus — only show tools relevant to this level (toolEnabled honours allowedTools)
+    // Show only tools you can actually use here (enabled diagnostics + applicable
+    // interventions). No greyed clutter — irrelevant tools for this level/paradigm
+    // simply don't appear.
     return E.TOOLS.filter((t) => t.menu === menuName)
-      .filter((t) => t.kind === 'diagnostic' || E.toolEnabled(st, t) || !st.level.allowedTools || t.universal || (st.level.allowedTools.indexOf(t.id) >= 0))
-      .map((t) => {
-        const enabled = E.toolEnabled(st, t) && !(locked && t.kind === 'intervention');
-        const cost = t.kind === 'diagnostic' ? 'free' : '+1 move · +' + (t.suspicion || 0) + '%';
-        return {
-          label: t.label,
-          tip: C.tooltip(t.id, App.mode),
-          cost,
-          danger: t.danger,
-          disabled: !enabled,
-          run: () => onTool(t.id),
-        };
-      });
+      .map((t) => ({ t, enabled: E.toolEnabled(st, t) && !(locked && t.kind === 'intervention') }))
+      .filter((x) => x.enabled)
+      .map(({ t }) => ({
+        label: t.label,
+        tip: C.tooltip(t.id, App.mode),
+        cost: t.kind === 'diagnostic' ? 'free' : '+1 move · +' + (t.suspicion || 0) + '%',
+        danger: t.danger,
+        disabled: false,
+        run: () => onTool(t.id),
+      }));
   }
 
   // ---- applying tools ----
