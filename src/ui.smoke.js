@@ -161,6 +161,16 @@ check('dashboard tracked our wins', /Publications/.test(modalText()) && JSON.par
 check('an achievement was unlocked', JSON.parse(store['pspss_ach'] || '[]').length >= 1);
 clickBtn('Close');
 
+console.log('\nReviewer 2 backdoor (unlock password):');
+q('a').filter((n) => n.textContent.includes('backdoor'))[0].fire('click');
+check('backdoor modal opens', modalText().includes('Backdoor'));
+let uinp = q('input').filter((n) => n.attrs.type === 'text')[0];
+uinp.value = 'definitely not the password'; clickBtn('Unlock');
+check('wrong password does NOT unlock', store['pspss_unlock'] !== '1');
+uinp.value = 'trending toward significance'; clickBtn('Unlock');
+check('correct password unlocks all campaigns', store['pspss_unlock'] === '1');
+check('start screen now offers re-lock', q('a').filter((n) => n.textContent.includes('Re-lock')).length > 0);
+
 console.log('\nMode toggle:');
 q('.mode-pill')[0].fire('click');
 check('mode pill toggled without error', true);

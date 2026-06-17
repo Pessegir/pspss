@@ -48,6 +48,11 @@ xdg-open index.html        # Linux
 Two modes: **Tenure Track** (satire + real citations) and **Pure P-Hacker** (pure comedy). Plus an
 optional **Preregistration** hard-mode.
 
+Campaigns unlock in order. To jump ahead (lecturers / playtesters): the **🔓 Reviewer 2 backdoor**
+link on the start screen unlocks everything if you whisper the magic, marginally-significant
+phrase — **`trending toward significance`** (it also accepts `marginally significant`, `p<0.05`,
+`p=0.051`, `reviewer2`, `just one more participant`). It doesn't fake your stars, and you can re-lock.
+
 ## Screenshots
 
 | | |
@@ -58,6 +63,7 @@ optional **Preregistration** hard-mode.
 | ![Spot the QRP](screenshots/07-spot-the-qrp.png) **Spot the QRP** — find the malpractice in realistic abstracts. | ![Career dashboard](screenshots/08-career-dashboard.png) **Career Dashboard** — publications, retractions, replication rate, achievements. |
 | ![Bayesian level](screenshots/09-bayesian-level.png) **Campaign 3 (Bayesian)** — the metric becomes the Bayes factor; prior-hack it. | ![House rule](screenshots/10-house-rule.png) **House rule** — some finales demand p < .001. |
 | ![Publication](screenshots/11-publication-win.png) **Publication** — significance secured, in an absurd journal. | ![Replication crisis](screenshots/12-replication-crisis.png) **Replication crisis** — years later, your hacked findings evaporate. |
+| ![Reviewer 2 backdoor](screenshots/13-backdoor.png) **Reviewer 2 backdoor** — the unlock prompt for lecturers/playtesters. | ![Unlocked](screenshots/14-unlocked-map.png) **Unlocked** — all campaigns open, no faked progress. |
 
 ## Develop
 

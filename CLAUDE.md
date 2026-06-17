@@ -69,6 +69,8 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
 - **`ui.js`** — the SPSS-parody DOM + campaign picker, plus the post-level **Debrief** (truth reveal),
   **Methods Codex**, **Career Dashboard** (+achievements/career stats in localStorage), **Sandbox
   Lab**, **Spot-the-QRP quiz**, effect-size/CI output, and the **HOUSE RULE** banner. Browser only.
+  Campaigns gate in order; a **Reviewer 2 backdoor** (start-screen link, password in `UNLOCK_WORDS`)
+  sets `App.unlocked` (localStorage `pspss_unlock`) to bypass gating without faking progress/stars.
 
 ### Key invariants
 

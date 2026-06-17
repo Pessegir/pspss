@@ -56,12 +56,15 @@
     progress: load(),
     achievements: loadAch(),
     career: loadCareer(),
+    unlocked: loadUnlock(),
   };
 
   function load() {
     try { return JSON.parse(localStorage.getItem('pspss_progress') || '{}'); }
     catch (e) { return {}; }
   }
+  function loadUnlock() { try { return localStorage.getItem('pspss_unlock') === '1'; } catch (e) { return false; } }
+  function saveUnlock() { try { localStorage.setItem('pspss_unlock', App.unlocked ? '1' : '0'); } catch (e) {} }
   function loadAch() { try { return JSON.parse(localStorage.getItem('pspss_ach') || '[]'); } catch (e) { return []; } }
   function loadCareer() {
     const d = { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 };
@@ -108,7 +111,7 @@
       html: 'Each study is rigged to be non-significant. Use the menus to <i>diagnose</i> the flaw (free), then apply the right Questionable Research Practice to torture it into significance. Fewer moves = more stars.' }));
 
     CAMPAIGNS.forEach((camp, ci) => {
-      const campUnlocked = ci === 0 || campaignCleared(CAMPAIGNS[ci - 1].id);
+      const campUnlocked = App.unlocked || ci === 0 || campaignCleared(CAMPAIGNS[ci - 1].id);
       const head = el('div', { style: 'margin:16px 0 6px' }, [
         el('div', { style: 'font-weight:700;color:#2c5685;font-size:15px', text: camp.name + (campUnlocked ? '' : '  🔒') }),
         el('div', { class: 'hint', text: camp.subtitle }),
@@ -122,7 +125,7 @@
       camp.levelIds.forEach((id, i) => {
         const lv = levelById(id);
         const prog = App.progress[id];
-        const prevDone = i === 0 || (App.progress[camp.levelIds[i - 1]] && App.progress[camp.levelIds[i - 1]].done);
+        const prevDone = App.unlocked || i === 0 || (App.progress[camp.levelIds[i - 1]] && App.progress[camp.levelIds[i - 1]].done);
         const card = el('div', { class: 'levelcard' + (prevDone ? '' : ' locked') });
         card.appendChild(el('div', { class: 'lt', text: `${i + 1}. ${lv.title}` }));
         card.appendChild(el('div', { class: 'lr', text: lv.rank }));
@@ -149,9 +152,43 @@
     const hint = el('div', { class: 'hint', style: 'margin-top:16px' }, [
       'A satire about p-hacking and the replication crisis. The statistics under the hood are real; the ethics are not. ',
       el('a', { class: 'link', onclick: showHow }, ['How is this rigged?']),
+      document.createTextNode('  ·  '),
+      el('a', { class: 'link', onclick: showUnlock }, [App.unlocked ? '🔒 Re-lock campaigns' : '🔓 Reviewer 2 backdoor']),
     ]);
     wrap.appendChild(hint);
     root.appendChild(wrap);
+  }
+
+  // ---- the "Reviewer 2 backdoor": unlock all campaigns with the magic phrase ----
+  const UNLOCK_WORDS = [
+    'trendingtowardsignificance', 'marginallysignificant', 'p<0.05', 'p<.05',
+    'p=0.051', 'p=.051', 'reviewer2', 'justonemoreparticipant', 'pleasereviewer2',
+  ];
+  function showUnlock() {
+    if (App.unlocked) { // toggle off
+      App.unlocked = false; saveUnlock(); toast('🔒 Campaigns re-locked. Integrity restored (for now).'); renderStart(); return;
+    }
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🔓 Reviewer 2 Backdoor' }));
+    body.appendChild(el('div', { class: 'hint', html: 'Unlock every campaign without earning it — for lecturers, playtesters, and the impatient. Whisper the magic, marginally-significant words.' }));
+    const inp = el('input', { type: 'text', placeholder: 'the magic phrase…', style: 'padding:7px;width:100%;margin-top:8px;border:1px solid #9a958a;border-radius:4px' });
+    body.appendChild(inp);
+    const tryUnlock = () => {
+      const norm = String(inp.value || '').toLowerCase().replace(/\s+/g, '');
+      if (UNLOCK_WORDS.indexOf(norm) >= 0) {
+        App.unlocked = true; saveUnlock(); closeModal();
+        toast('🔓 Access granted. Reviewer 2 looks the other way.');
+        renderStart();
+      } else {
+        toast('❌ "' + (inp.value || '') + '"? Reject. Major revisions. (Hint: what does a researcher call p = 0.06?)');
+      }
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+    const row = el('div', { class: 'btnrow' });
+    row.appendChild(el('button', { class: 'btn', onclick: tryUnlock }, ['Unlock']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Cancel']));
+    body.appendChild(row);
+    modal('Reviewer 2 Backdoor', body, { dismissable: true });
   }
 
   function modePill() {
