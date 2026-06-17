@@ -50,11 +50,11 @@
         const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
         if (state.method === 'ols') {
           const r = ctx.Stats.tTestIndependent(A, B, false);
-          return { testName: 't-test on all cells (ignores animal)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+          return { testName: 't-test on all cells (ignores animal)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
         }
         const o = ctx.obsArrays(state);
         const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
-        return { testName: 'Mixed model (random intercept: animal)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A' };
+        return { testName: 'Mixed model (random intercept: animal)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -83,7 +83,7 @@
         const { A, B } = groupArrays(state.participants);
         const welch = state.method !== 'student';
         const r = ctx.Stats.tTestIndependent(A, B, welch);
-        return { testName: welch ? "Welch's t-test" : "Student's t-test (equal var)", statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+        return { testName: welch ? "Welch's t-test" : "Student's t-test (equal var)", statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -150,7 +150,8 @@
         const inter = treat.map((t, i) => t * modc[i]);
         const r = ctx.Stats.ols(y, [treat, modc, inter]);
         const c = r.coefs[3];
-        return { testName: state.medianSplit ? 'Moderation (median-split)' : 'Moderation (continuous)', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Interaction β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A' };
+        const gm = groupArrays(rows);
+        return { testName: state.medianSplit ? 'Moderation (median-split)' : 'Moderation (continuous)', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Interaction β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
       },
     },
 
@@ -192,11 +193,12 @@
           const r = ctx.Stats.ols(y, [treat, cov]);
           const c = r.coefs[1];
           const lbl = (state.level.candidateControls.find((x) => x.id === state.controlVar) || {}).label;
-          return { testName: 'ANCOVA (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A' };
+          const gm = groupArrays(rows);
+          return { testName: 'ANCOVA (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
         }
         const { A, B } = groupArrays(rows);
         const r = ctx.Stats.tTestIndependent(A, B, false);
-        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -277,7 +279,8 @@
         const cols = [treat].concat(spec.controls.map((cid) => rows.map((r) => r[cid])));
         const r = ctx.Stats.ols(y, cols);
         const c = r.coefs[1];
-        return { testName: 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A' };
+        const gm = groupArrays(rows);
+        return { testName: 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
       },
     },
 
@@ -285,7 +288,7 @@
     {
       id: 'outcome-switch', campaign: 'c2', title: 'The Registered Primary Outcome',
       rank: 'Clinical Trialist', design: 'between', flaw: 'outcome-switch',
-      par: 1, seed: 2772, predictedHigher: 'B', winThreshold: 0.05,
+      par: 1, seed: 2772, predictedHigher: 'B', winThreshold: 0.001,
       allowedTools: ['pick-outcome'],
       dvLabels: { primary: 'Primary Endpoint', dv2: 'Biomarker A', dv3: 'Biomarker B', dv4: 'Quality of Life', dv5: 'Symptom Scale', dv6: 'Exploratory Index' },
       hypothesis: 'The drug (B) beats placebo (A) on the registered primary endpoint.',
@@ -338,11 +341,11 @@
         const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
         if (state.method === 'ols') {
           const r = ctx.Stats.tTestIndependent(A, B, false);
-          return { testName: 't-test on all observations', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+          return { testName: 't-test on all observations', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
         }
         const o = ctx.obsArrays(state);
         const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
-        return { testName: 'Mixed model (random intercept: site)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A' };
+        return { testName: 'Mixed model (random intercept: site)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
   ];
@@ -356,11 +359,16 @@
   // appear only where their data exists. Each level's evaluate() honours just its
   // own flag, so non-matching tools cannot accidentally win (proved by levels.verify).
   const C2_MENU = ['choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'robustness-check'];
+  // Ground-truth for the debrief reveal (see levels.js). These levels manufacture
+  // a FALSE POSITIVE from genuine null structure; the rest have a real effect
+  // obtained by an invalid analysis.
+  const FALSE_POSITIVE = { 'two-kinds': 1, collider: 1, simpson: 1, 'spec-curve': 1, 'honest-lmm': 1 };
   LEVELS.forEach((l) => {
     if (l.lmm === undefined) l.lmm = true;
     if (l.moderator === undefined) l.moderator = 'mod';
     if (l.aggregable === undefined) l.aggregable = true;
     l.allowedTools = C2_MENU;
+    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
   });
 
   // register onto the shared LEVELS array

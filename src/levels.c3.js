@@ -34,6 +34,7 @@
       testName: 'Bayesian t-test (Cauchy r=' + (+state.priorScale).toFixed(3) + (state.oneSided ? ', one-sided' : '') + ')',
       statLabel: 't', statistic: t, df: nu, bf, metricKind: 'bf', metricLabel,
       n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher,
+      aArr: A, bArr: B,
     };
   }
 
@@ -110,6 +111,12 @@
       build(seed) { return { participants: twoGroups(seed, 24, 24, 1, 10) }; },
     }),
   ];
+
+  // Ground-truth for the debrief reveal. bf01-flip and the default-prior trap are
+  // genuinely null (a "win" there is spin / a false positive); the rest have a real
+  // (if small) effect that prior-hacking merely overstates.
+  const FALSE_POSITIVE = { 'bf01-flip': 1, 'default-prior-trap': 1 };
+  LEVELS.forEach((l) => { l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' }; });
 
   const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
   LEVELS.forEach((l) => levelsApi.LEVELS.push(l));

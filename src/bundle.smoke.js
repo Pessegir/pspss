@@ -64,8 +64,13 @@ const before = document.querySelector('#stat-p')._cls.has('sig');
 byText('.item', 'Refine Sample').fire('click');
 check('C1 not significant before, significant after', !before && document.querySelector('#stat-p')._cls.has('sig'));
 check('win modal from bundle', modalRoot.textContent.includes('Significance Secured') || modalRoot.textContent.includes('ACCEPT'));
+check('effect size rendered in output', q('.out-effect').length > 0);
 
+// debrief (the lesson)
+byText('button', 'What really happened').fire('click');
+check('debrief opens from bundle', modalRoot.textContent.includes('Debrief') && q('.reveal').length > 0);
 byText('button', 'Campaign Map').fire('click');
+
 byText('.levelcard', 'Count Every Mouse Twice').fire('click');
 byText('button', 'Begin Analysis').fire('click');
 check('C2 full menu (>=4 move options)', q('.item').filter((n) => /move/.test(n.textContent)).length >= 4);
@@ -73,14 +78,30 @@ check('C2 not significant under default', !document.querySelector('#stat-p')._cl
 byText('.item', 'Choose Statistical Test').fire('click');
 byText('button', 't-test on all cells').fire('click');
 check('C2 solved via wrong test (bundle)', document.querySelector('#stat-p')._cls.has('sig'));
+byText('button', 'Skip to Map').fire('click');
 
-byText('button', 'Campaign Map').fire('click');
+// house rule banner
+byText('.levelcard', 'The Registered Primary Outcome').fire('click');
+check('HOUSE RULE banner from bundle', q('.house-rule').length > 0);
+byText('.item', 'Exit to Campaign').fire('click');
+
 byText('.levelcard', 'Pick a Prior').fire('click');
 byText('button', 'Begin Analysis').fire('click');
 check('C3 stat strip shows BF', document.querySelector('#stat-p').textContent.includes('BF'));
 byText('.item', 'Set Prior Width').fire('click');
 byText('button', 'Ultranarrow').fire('click');
 check('C3 solved via prior-hacking (bundle)', document.querySelector('#stat-p')._cls.has('sig'));
+byText('button', 'Skip to Map').fire('click');
+
+// new screens render from the bundle
+byText('button', 'Methods Codex').fire('click');
+check('Codex renders cards', q('.codex-card').length >= 5);
+byText('button', 'Close').fire('click');
+byText('button', 'Spot the QRP').fire('click');
+check('Quiz renders a scenario', q('.quiz-scenario').length > 0);
+byText('button', 'Quit').fire('click');
+byText('button', 'Career Dashboard').fire('click');
+check('Dashboard renders', q('.dash-grid').length > 0);
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);

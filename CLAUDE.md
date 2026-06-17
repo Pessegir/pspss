@@ -27,7 +27,8 @@ node build.js              # bundle src/* -> index.html
 node src/stats.test.js     # stats engine vs hand-derived / known references
 node src/lmm.test.js       # linear mixed model vs the cluster-means equivalence
 node src/bayes.test.js     # Bayes factors: dual-integration + BayesFactor `sleep` anchor
-node src/levels.verify.js  # every level: non-winning raw, solvable at par, decoys don't win
+node src/knowledge.test.js # Codex/debrief/quiz/achievement data is complete & consistent
+node src/levels.verify.js  # every level: non-winning raw, solvable at par, decoys don't win; truth metadata present
 node src/ui.smoke.js       # drives the real ui.js through a DOM shim (Node/require path)
 node src/bundle.smoke.js   # runs the built index.html the browser way (global path); build first
 node src/tune-seeds.js     # C1 seed search; only after changing a generator
@@ -61,12 +62,23 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   `analyze` (→ `finalize`), `applyTool`, `toolEnabled`, scoring, win/lose. Dispatches to a level's
   `evaluate` when present.
 - **`charts.js`** (`PSPSS_charts`) — SVG figure renderers; diagnostics return `{fn, args}`.
+- **`knowledge.js`** (`PSPSS_knowledge`) — the educational layer: `QRP_INFO` (per-flaw Codex/debrief
+  entries with citations + antidotes + `verdict`), `TOOL_LABEL`, `QUIZ_ITEMS`/`QUIZ_OPTIONS`,
+  `ACHIEVEMENTS` + `evaluateAchievements`. Pure data/logic, consumed by `ui.js`.
 - **`content.js`** (`PSPSS_content`) — flavor text keyed by mode.
-- **`ui.js`** — the whole SPSS-parody DOM + campaign picker. Browser only.
+- **`ui.js`** — the SPSS-parody DOM + campaign picker, plus the post-level **Debrief** (truth reveal),
+  **Methods Codex**, **Career Dashboard** (+achievements/career stats in localStorage), **Sandbox
+  Lab**, **Spot-the-QRP quiz**, effect-size/CI output, and the **HOUSE RULE** banner. Browser only.
 
 ### Key invariants
 
 - **Stats are real, never faked.** Verify any change against the relevant `*.test.js`.
+- **Educational layer.** Every level carries `truth: {exists, higher?}` (the data-generating reality)
+  so the Debrief can reveal real-effect-obtained-invalidly vs. manufactured false positive. Every
+  level `flaw` must have a `QRP_INFO` entry; every intervention tool a `TOOL_LABEL` (asserted by
+  `knowledge.test.js`). `analyze()` returns `effect` (Cohen's d) + `ci` (95%); for custom evaluators
+  pass `aArr`/`bArr` (group arrays) and `finalize` derives them. Difficulty is uniform — no
+  tutorial/hints/easy-mode by design ("being a good researcher ≠ being good at p-hacking").
 - **Every level is a real puzzle.** `levels.verify.js` proves: raw is not a win; the intended QRP
   wins at `par`; and for C2, among ALL options offered that round, *only* the intended analysis
   wins (every other single move is a proven non-winning decoy). Re-run it after any level/engine

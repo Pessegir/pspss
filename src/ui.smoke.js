@@ -67,6 +67,7 @@ require('./levels.c3');
 global.PSPSS_campaigns = require('./campaigns');
 global.PSPSS_engine = require('./engine');
 global.PSPSS_charts = require('./charts');
+global.PSPSS_knowledge = require('./knowledge');
 global.PSPSS_content = require('./content');
 
 vm.runInThisContext(fs.readFileSync(path.join(__dirname, 'ui.js'), 'utf8'), { filename: 'ui.js' });
@@ -91,9 +92,16 @@ check('p not yet significant', !pIsSig());
 clickItem('Refine Sample');
 check('outlier solved', pIsSig());
 check('win modal', modalText().includes('Significance Secured') || modalText().includes('ACCEPT'));
+check('effect size + CI shown in output', q('.out-effect').length > 0);
+
+console.log('\nDebrief: the truth reveal:');
+clickBtn('What really happened');
+check('debrief opens', modalText().includes('Debrief'));
+check('debrief shows a truth reveal panel', q('.reveal').length > 0);
+check('debrief cites a method', modalText().includes('Codex') || /20\d\d/.test(modalText()));
+clickBtn('Campaign Map');
 
 console.log('\nC2 — full menu, must pick the right analysis (Count Every Mouse Twice):');
-clickBtn('Campaign Map');
 check('campaign 2 listed', appNode.textContent.includes('Campaign 2 — The Methods Section'));
 card('Count Every Mouse Twice').fire('click');
 clickBtn('Begin Analysis');
@@ -106,9 +114,16 @@ clickItem('Choose Statistical Test');
 check('test chooser shown', modalText().includes('t-test on all cells'));
 clickBtn('t-test on all cells');
 check('solved via the (wrong) pooled test', pIsSig());
+clickBtn('Skip to Map');
+
+console.log('\nHouse rule (outcome-switch demands p < .001):');
+card('The Registered Primary Outcome').fire('click');
+check('HOUSE RULE banner shown', q('.house-rule').length > 0);
+clickBtn('Begin Analysis');
+check('goal shows the strict bar', document.querySelector('#stat-p').textContent.includes('0.001'));
+clickItem('Exit to Campaign');
 
 console.log('\nC3 — Bayes factor metric + prior-hacking (Pick a Prior):');
-clickBtn('Campaign Map');
 check('campaign 3 listed', appNode.textContent.includes('Campaign 3 — In Bayes We Trust'));
 card('Pick a Prior').fire('click');
 clickBtn('Begin Analysis');
@@ -120,9 +135,33 @@ clickItem('Set Prior Width');
 check('prior chooser shown', modalText().includes('Ultranarrow'));
 clickBtn('Ultranarrow');
 check('prior-hacked past BF threshold', pIsSig());
+clickBtn('Skip to Map');
+
+console.log('\nNew learning/engagement screens:');
+clickBtn('Methods Codex');
+check('Codex lists real QRPs', modalText().includes('Methods Codex') && q('.codex-card').length >= 5);
+clickBtn('Close');
+clickBtn('Sandbox Lab');
+check('Sandbox opens', modalText().includes('Sandbox Lab'));
+const slider = q('input').filter((n) => n.attrs.type === 'range')[0];
+check('sandbox has sliders', !!slider);
+if (slider) { slider.value = '8'; slider.fire('input'); }
+check('sandbox renders a figure + a p-value', q('svg').length > 0 && /p =|BF/.test(modalText()));
+clickBtn('Close');
+clickBtn('Spot the QRP');
+check('quiz opens with a scenario', modalText().includes('Spot the QRP'));
+q('input').filter((n) => n.attrs.type === 'checkbox')[0].fire('change'); // tick one
+clickBtn("Don't trust");
+clickBtn('Submit');
+check('quiz gives feedback', q('.reveal').length > 0);
+clickBtn('Quit');
+clickBtn('Career Dashboard');
+check('dashboard shows publications', modalText().includes('Publications'));
+check('dashboard tracked our wins', /Publications/.test(modalText()) && JSON.parse(store['pspss_career'] || '{}').publications >= 1);
+check('an achievement was unlocked', JSON.parse(store['pspss_ach'] || '[]').length >= 1);
+clickBtn('Close');
 
 console.log('\nMode toggle:');
-clickBtn('Campaign Map');
 q('.mode-pill')[0].fire('click');
 check('mode pill toggled without error', true);
 

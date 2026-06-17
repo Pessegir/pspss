@@ -368,6 +368,48 @@
     return M.map((row) => row.slice(n));
   }
 
+  // ---- effect size & confidence intervals ---------------------------------
+
+  // Cohen's d for two independent samples (pooled SD).
+  function cohenD(a, b) {
+    const na = a.length;
+    const nb = b.length;
+    const va = variance(a);
+    const vb = variance(b);
+    const pooled = Math.sqrt(((na - 1) * va + (nb - 1) * vb) / (na + nb - 2));
+    return (mean(b) - mean(a)) / pooled; // positive when b > a
+  }
+
+  // Critical t for a two-tailed CI at confidence `conf` (e.g. 0.95), via
+  // bisection on the already-trusted tDistTwoTailedP. Returns t such that the
+  // two-tailed p == 1 - conf.
+  function tCritical(df, conf) {
+    const target = 1 - (conf == null ? 0.95 : conf); // tail mass (e.g. 0.05)
+    let lo = 0;
+    let hi = 1000;
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2;
+      // tDistTwoTailedP decreases as t increases
+      if (tDistTwoTailedP(mid, df) > target) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  // 95% (or `conf`) CI for the difference in means (meanB - meanA), Welch SE.
+  function meanDiffCI(a, b, conf) {
+    const na = a.length;
+    const nb = b.length;
+    const va = variance(a);
+    const vb = variance(b);
+    const diff = mean(b) - mean(a);
+    const se = Math.sqrt(va / na + vb / nb);
+    const df = Math.pow(va / na + vb / nb, 2) /
+      (Math.pow(va / na, 2) / (na - 1) + Math.pow(vb / nb, 2) / (nb - 1));
+    const tc = tCritical(df, conf);
+    return { diff, lo: diff - tc * se, hi: diff + tc * se, se, df };
+  }
+
   const Stats = {
     // special functions / cdfs (exported for testing)
     logGamma,
@@ -390,6 +432,10 @@
     pearson,
     ols,
     ancova,
+    // effect size & CIs
+    cohenD,
+    tCritical,
+    meanDiffCI,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

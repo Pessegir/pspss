@@ -17,6 +17,26 @@ real literature — that's the joke, and the lesson.
 
 Campaigns unlock in order. See [DESIGN.md](DESIGN.md) for the full design.
 
+## Learn while you cheat
+
+The game is built to *teach*, not just amuse — for undergrads, grads, and working researchers:
+
+- **Post-level Debrief** — after every study it names the QRP you used, why it misleads, the real
+  citation, the honest alternative, and the **truth reveal**: did you find a real effect by an
+  invalid route, or manufacture a **false positive**? Shown with **Cohen's d + 95% CI** (so a tiny
+  p-value with a zero-spanning CI is exposed for what it is).
+- **Methods Codex** — a browsable glossary of every QRP with real cases (Bem ESP, Simpson's paradox,
+  pseudoreplication, OSC reproducibility…) and antidotes (preregistration, Welch, mixed models, the
+  multiverse).
+- **Sandbox Lab** — drag sliders for n / effect / SD / prior and watch p (or the Bayes factor) react
+  live. Pure intuition-building.
+- **Spot the QRP** — identify the malpractices in realistic fabricated abstracts.
+- **Career Dashboard + achievements** — publications, retractions, replication rate, and unlockable
+  titles.
+
+Difficulty is deliberately uniform and hard — no easy mode. Being a good researcher isn't the same
+as being good at p-hacking; the game rewards the hack precisely so the debrief can indict it.
+
 ## Play
 
 Open **`index.html`** in any browser — one self-contained file, no server, no dependencies.

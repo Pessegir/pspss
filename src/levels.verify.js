@@ -98,6 +98,10 @@ for (const level of LEVELS) {
   const isTrap = /honest/.test(level.flaw);
   const raw = E.analyze(E.newState(level, undefined, 'tenure'));
 
+  // ground-truth metadata present + consistent
+  check('has truth metadata', !!level.truth && typeof level.truth.exists === 'boolean');
+  if (level.truth && level.truth.exists === false) check('null level is non-significant raw', !raw.significant, mtx(raw));
+
   if (isTrap) check('raw is not a win', !raw.win, mtx(raw));
   else if (level.flaw === 'wrong-direction') check('raw significant but WRONG direction', raw.significant && !raw.win, mtx(raw));
   else check('raw is NOT a win', !raw.win, mtx(raw));

@@ -125,14 +125,27 @@
     const label = raw.metricLabel || (isBF ? 'BF₁₀' : 'p');
     const crossed = isBF ? value > thr : value < thr;
     const dirOK = raw.higher === state.predictedHigher;
-    return Object.assign({}, raw, {
+    // Effect size + 95% CI: provided directly, else derived from raw aArr/bArr
+    // (the standardized group difference). Teaches "significant ≠ important".
+    let effect = raw.effect;
+    let ci = raw.ci;
+    if (effect === undefined && raw.aArr && raw.bArr && raw.aArr.length > 1 && raw.bArr.length > 1) {
+      effect = Stats.cohenD(raw.aArr, raw.bArr);
+      ci = Stats.meanDiffCI(raw.aArr, raw.bArr);
+    }
+    const out = Object.assign({}, raw, {
       metricKind: isBF ? 'bf' : 'p',
       metricLabel: label,
       metricValue: value,
       goalText: isBF ? label + ' > ' + thr : label + ' < ' + thr,
       significant: crossed,
       win: crossed && dirOK,
+      effect,
+      ci,
     });
+    delete out.aArr;
+    delete out.bArr;
+    return out;
   }
 
   function analyze(state) {
@@ -149,6 +162,12 @@
           : Stats.tTestPaired(post, pre);
       const mPre = Stats.mean(pre);
       const mPost = Stats.mean(post);
+      // paired effect (d_z) + CI on the mean change
+      const diffs = post.map((v, i) => v - pre[i]);
+      const sdd = Stats.sd(diffs);
+      const md = Stats.mean(diffs);
+      const tc = Stats.tCritical(diffs.length - 1, 0.95);
+      const se = sdd / Math.sqrt(diffs.length);
       return finalize(state, {
         testName: state.testType === 'nonparametric' ? 'Wilcoxon signed-rank' : 'Paired t-test',
         statLabel: state.testType === 'nonparametric' ? 'W' : 't',
@@ -158,6 +177,8 @@
         n: pre.length * 2,
         groups: { pre: mPre, post: mPost },
         higher: mPost >= mPre ? 'post' : 'pre',
+        effect: md / sdd,
+        ci: { diff: md, lo: md - tc * se, hi: md + tc * se },
       });
     }
 
@@ -194,6 +215,7 @@
     return finalize(state, {
       testName, statLabel, statistic, df, p: res.p,
       n: A.length + B.length, groups: { A: mA, B: mB }, higher,
+      aArr: A, bArr: B,
     });
   }
 
@@ -857,6 +879,7 @@
       text: result.message || tool.label,
       move: isMove,
       chart: result.chart || null,
+      toolId: tool.id,
     });
 
     // Fabrication can get you caught immediately.

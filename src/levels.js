@@ -257,6 +257,22 @@
     },
   ];
 
+  // Ground-truth of the data-generating process, for the post-level debrief's
+  // "was your finding real?" reveal. exists=false => a win is a manufactured
+  // FALSE POSITIVE; exists=true => the effect is real but obtained by an invalid
+  // route (untrustworthy / may not replicate). `higher` is the true direction.
+  const TRUTH = {
+    outlier: { exists: true, higher: 'B' },
+    skew: { exists: true, higher: 'B' },
+    confound: { exists: true, higher: 'B' },
+    'optional-stopping': { exists: true, higher: 'post' },
+    subgroup: { exists: true, higher: 'B' }, // real only in an unplanned subgroup
+    multiverse: { exists: true, higher: 'B' }, // real on a cherry-picked outcome
+    'wrong-direction': { exists: true, higher: 'A' }, // real, but OPPOSITE the hypothesis
+    'honest-null': { exists: false },
+  };
+  LEVELS.forEach((l) => { l.truth = TRUTH[l.id] || { exists: true, higher: 'B' }; });
+
   const api = { LEVELS };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

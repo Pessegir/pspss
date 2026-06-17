@@ -54,13 +54,22 @@
     levelIndex: 0,
     state: null,
     progress: load(),
+    achievements: loadAch(),
+    career: loadCareer(),
   };
 
   function load() {
     try { return JSON.parse(localStorage.getItem('pspss_progress') || '{}'); }
     catch (e) { return {}; }
   }
+  function loadAch() { try { return JSON.parse(localStorage.getItem('pspss_ach') || '[]'); } catch (e) { return []; } }
+  function loadCareer() {
+    const d = { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 };
+    try { return Object.assign(d, JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return d; }
+  }
   function save() { try { localStorage.setItem('pspss_progress', JSON.stringify(App.progress)); } catch (e) {} }
+  function saveAch() { try { localStorage.setItem('pspss_ach', JSON.stringify(App.achievements)); localStorage.setItem('pspss_career', JSON.stringify(App.career)); } catch (e) {} }
+  const K = (typeof PSPSS_knowledge !== 'undefined') ? PSPSS_knowledge : null;
 
   // ========================================================================
   // START SCREEN / CAMPAIGN MAP
@@ -85,6 +94,15 @@
     pre.appendChild(document.createTextNode('Preregistration mode (declare ONE analysis up front — honest, brutal)'));
     controls.appendChild(pre);
     wrap.appendChild(controls);
+
+    // learn / play / profile entry points
+    const tools = el('div', { class: 'btnrow', style: 'margin-top:8px' }, [
+      el('button', { class: 'btn ghost', onclick: showCodex }, ['📖 Methods Codex']),
+      el('button', { class: 'btn ghost', onclick: showSandbox }, ['🧪 Sandbox Lab']),
+      el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
+      el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
+    ]);
+    wrap.appendChild(tools);
 
     wrap.appendChild(el('div', { class: 'hint', style: 'margin:12px 0 4px',
       html: 'Each study is rigged to be non-significant. Use the menus to <i>diagnose</i> the flaw (free), then apply the right Questionable Research Practice to torture it into significance. Fewer moves = more stars.' }));
@@ -246,8 +264,8 @@
     if (menuName === 'Help') {
       return [
         { label: 'About PSPSS', run: showHow },
+        { label: '📖 Methods Codex', tip: 'What each trick really is, and how to do it right.', run: () => showCodex() },
         { label: 'Cite this software', run: () => toast('Desperate, A. (2026). PSPSS [Software]. Self-published, weeping.') },
-        { label: 'Statistical Methods Help (404)', run: () => toast('Page not found. Try p < 0.05.') },
       ];
     }
     // tool menus — only show tools relevant to this level (toolEnabled honours allowedTools)
@@ -453,6 +471,13 @@
     tbl.appendChild(row);
     block.appendChild(tbl);
 
+    // effect size + 95% CI — significance is not importance
+    if (a.effect !== undefined && a.effect !== null && Number.isFinite(a.effect)) {
+      const ciTxt = a.ci ? `, 95% CI [${fmt(a.ci.lo, 2)}, ${fmt(a.ci.hi, 2)}]` : '';
+      const spansZero = a.ci && a.ci.lo < 0 && a.ci.hi > 0;
+      block.appendChild(el('div', { class: 'out-note out-effect', html: `Effect size: Cohen's <i>d</i> = <b>${fmt(a.effect, 2)}</b>${ciTxt}` + (spansZero ? ' <span class="out-flag">— CI spans zero</span>' : '') }));
+    }
+
     if (a.significant && !a.win) {
       block.appendChild(el('div', { class: 'out-flag', text: '⚠ Crossed the threshold — but in the WRONG direction. Your hypothesis predicted the other way.' }));
     }
@@ -500,6 +525,14 @@
     body.appendChild(el('div', { class: 'rank', style: 'font-style:italic;color:#6b6450;margin-bottom:8px', text: lv.rank }));
     body.appendChild(el('div', { html: lv.brief }));
     body.appendChild(el('div', { class: 'hyp', html: '<b>Your hypothesis:</b> ' + lv.hypothesis }));
+
+    // HOUSE RULE banner when the bar is stricter than the usual .05 / BF>3
+    const a0 = E.analyze(App.state);
+    const strict = lv.winThreshold != null && (a0.metricKind === 'bf' ? lv.winThreshold > 3 : lv.winThreshold < 0.05);
+    if (strict) {
+      const bar = a0.metricKind === 'bf' ? 'BF₁₀ > ' + lv.winThreshold : 'p < ' + lv.winThreshold;
+      body.appendChild(el('div', { class: 'house-rule', html: `🏛️ <b>HOUSE RULE.</b> The reviewers here smell a rat at the usual threshold. Nothing counts unless you clear <b>${bar}</b>. (Yes, that's a real thing — some fields now demand p &lt; .005 to call a result "significant". Benjamin et al., 2018.)` }));
+    }
 
     if (App.prereg) {
       body.appendChild(el('div', { class: 'out-flag', style: 'margin:8px 0', text: 'PREREGISTRATION MODE: you must commit to ONE analysis now, before exploring. No take-backs. Good luck. You will need actual data on your side.' }));
@@ -615,8 +648,37 @@
       body.appendChild(starRow({ stars: 3, clean: true }));
     }
 
+    const newly = updateCareer(event, a, stars);
+
+    // The debrief is the lesson — make it the natural next step.
+    const row = el('div', { class: 'btnrow' });
+    row.appendChild(el('button', { class: 'btn', onclick: () => showDebrief(event, a, newly) }, ['📋 What really happened →']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Skip to Map']));
+    body.appendChild(row);
+    modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+  }
+
+  // update persistent career stats + unlock achievements; returns newly unlocked ids
+  function updateCareer(event, a, stars) {
+    const lv = App.state.level;
+    const strict = lv.winThreshold != null && (a.metricKind === 'bf' ? lv.winThreshold >= 10 : lv.winThreshold <= 0.01);
+    if (event === 'win') { App.career.publications++; if (stars.clean) App.career.cleanWins++; if (strict) App.career.p001Wins++; }
+    else if (event === 'retract') App.career.retractions++;
+    else if (event === 'honest' || event === 'prereg-null') App.career.honestNulls++;
+    let newly = [];
+    if (K) {
+      const ctx = { event, level: lv, state: App.state, stars: stars.stars, suspicion: App.state.suspicion, moves: App.state.moves, par: lv.par, career: App.career };
+      newly = K.evaluateAchievements(ctx, App.achievements);
+      App.achievements = App.achievements.concat(newly);
+    }
+    saveAch();
+    return newly;
+  }
+
+  function navButtons(event) {
     const row = el('div', { class: 'btnrow' });
     const next = App.levelIndex + 1;
+    const lv = App.state.level;
     const nextSameCampaign = next < LEVELS.length && campaignOf(LEVELS[next].id) === campaignOf(lv.id);
     if ((event === 'win' || event === 'honest' || event === 'prereg-null') && nextSameCampaign) {
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startLevel(next); } }, ['Next Study ▸']));
@@ -625,8 +687,71 @@
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startLevel(App.levelIndex); } }, ['Try Again']));
     }
     row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Campaign Map']));
-    body.appendChild(row);
-    modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+    return row;
+  }
+
+  // ---- the post-level DEBRIEF: the educational payoff ----
+  function showDebrief(event, a, newly) {
+    const lv = App.state.level;
+    const info = K && K.QRP_INFO[lv.flaw];
+    const tenure = App.mode === 'tenure';
+    const body = el('div');
+    body.appendChild(el('h2', { text: '📋 Debrief: ' + lv.title }));
+
+    // what you did (mapped from the move log)
+    const used = [];
+    App.state.log.forEach((e) => { if (e.move && e.toolId && K && K.TOOL_LABEL[e.toolId]) used.push(K.TOOL_LABEL[e.toolId]); });
+    if (used.length) body.appendChild(el('div', { class: 'dbf', html: '<b>What you did:</b> you ' + used.join('; then ') + '.' }));
+
+    // the truth reveal
+    const reveal = el('div', { class: 'reveal' });
+    if (event === 'retract') {
+      reveal.className = 'reveal bad';
+      reveal.innerHTML = '🚨 <b>Caught.</b> You fabricated data and PubPeer noticed. This is the one move that is not a "questionable" practice — it is fraud.';
+    } else if (event === 'honest' || event === 'prereg-null') {
+      reveal.className = 'reveal good';
+      reveal.innerHTML = lv.truth && lv.truth.exists
+        ? '🕊️ <b>You walked away from a real (but unprovable-here) effect.</b> Honest, if costly — exactly the trade-off that makes good science hard.'
+        : '🕊️ <b>You were right to walk away — there was nothing here.</b> A null, honestly reported, is real knowledge.';
+    } else if (lv.truth && lv.truth.exists === false) {
+      reveal.className = 'reveal bad';
+      reveal.innerHTML = '🎭 <b>That was a FALSE POSITIVE.</b> There was no real effect in the data-generating process — you manufactured the result. This is precisely how false findings enter the literature.';
+    } else if (lv.flaw === 'wrong-direction') {
+      reveal.className = 'reveal warn';
+      reveal.innerHTML = '🔁 <b>A real effect existed — but OPPOSITE to your hypothesis.</b> You rewrote the prediction to match it (HARKing). The finding is "true", the inference is theatre.';
+    } else {
+      reveal.className = 'reveal warn';
+      reveal.innerHTML = '⚠️ <b>The effect was real — but your route to it was invalid.</b> A reviewer can\'t distinguish your "significant" result from luck, and it may not replicate.';
+    }
+    body.appendChild(reveal);
+
+    // effect size honesty
+    if (a && a.effect !== undefined && Number.isFinite(a.effect)) {
+      const ciTxt = a.ci ? ` (95% CI of the difference [${fmt(a.ci.lo, 2)}, ${fmt(a.ci.hi, 2)}]${a.ci.lo < 0 && a.ci.hi > 0 ? ', which spans zero' : ''})` : '';
+      body.appendChild(el('div', { class: 'dbf', html: `<b>Effect size:</b> Cohen's <i>d</i> = ${fmt(a.effect, 2)}${ciTxt}. Remember: a small p-value is not a large or certain effect.` }));
+    }
+
+    // the QRP lesson
+    if (info) {
+      const verdictTag = info.verdict === 'context' ? '<span class="vtag ctx">context-dependent</span>' : info.verdict === 'honest' ? '<span class="vtag ok">the honest path</span>' : '<span class="vtag bad">questionable practice</span>';
+      const lesson = el('div', { class: 'lesson' });
+      lesson.innerHTML = `<div class="lesson-h">${info.term} ${verdictTag}</div>` +
+        `<div>${info.plain}</div>` +
+        `<div class="lesson-harm"><b>Why it matters:</b> ${info.harm}</div>` +
+        `<div><b>Do instead:</b> ${info.antidote}</div>` +
+        (tenure ? `<div class="lesson-cite">${info.realCase}<br><i>${info.citation}</i></div>` : '');
+      body.appendChild(lesson);
+      const link = el('a', { class: 'link', onclick: () => showCodex(lv.flaw) }, ['Open in Methods Codex →']);
+      body.appendChild(el('div', { style: 'margin-top:6px' }, [link]));
+    }
+
+    if (newly && newly.length && K) {
+      const names = newly.map((id) => (K.ACHIEVEMENTS.find((x) => x.id === id) || {}).title).filter(Boolean);
+      if (names.length) body.appendChild(el('div', { class: 'ach-pop', html: '🏅 <b>Achievement unlocked:</b> ' + names.join(', ') }));
+    }
+
+    body.appendChild(navButtons(event));
+    modal('Debrief', body);
   }
 
   function starRow(s) {
@@ -683,6 +808,193 @@
     row.appendChild(el('button', { class: 'btn', onclick: closeModal }, ['Got it']));
     body.appendChild(row);
     modal('About PSPSS', body, { dismissable: true });
+  }
+
+  // ======================= METHODS CODEX =======================
+  function showCodex(focusFlaw) {
+    const body = el('div');
+    body.appendChild(el('h2', { text: '📖 Methods Codex' }));
+    body.appendChild(el('div', { class: 'hint', text: 'Every trick in the game is a real Questionable Research Practice. Here is what each one is, why it misleads, and how to do it right.' }));
+    const keys = Object.keys(K.QRP_INFO);
+    keys.sort((a, b) => (a === focusFlaw ? -1 : b === focusFlaw ? 1 : 0));
+    keys.forEach((k) => {
+      const e = K.QRP_INFO[k];
+      const vt = e.verdict === 'context' ? '<span class="vtag ctx">context-dependent</span>' : e.verdict === 'honest' ? '<span class="vtag ok">the honest path</span>' : '<span class="vtag bad">questionable practice</span>';
+      const card = el('div', { class: 'codex-card' + (k === focusFlaw ? ' focus' : '') });
+      card.innerHTML = `<div class="lesson-h">${e.term} ${vt}</div><div>${e.plain}</div>` +
+        `<div class="lesson-harm"><b>Harm:</b> ${e.harm}</div>` +
+        `<div><b>Antidote:</b> ${e.antidote}</div>` +
+        `<div class="lesson-cite">${e.realCase}<br><i>${e.citation}</i></div>`;
+      body.appendChild(card);
+    });
+    body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
+    modal('Methods Codex', body, { dismissable: true });
+  }
+
+  // ======================= CAREER DASHBOARD =======================
+  function replicationRate() {
+    let survived = 0, total = 0;
+    LEVELS.forEach((lv) => {
+      const p = App.progress[lv.id];
+      if (!p || !p.done) return;
+      total++;
+      if (p.honest || p.prereg || (p.suspicion || 0) <= 20) survived++;
+    });
+    return total ? Math.round((survived / total) * 100) : 0;
+  }
+  function showDashboard() {
+    const c = App.career;
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🎓 Career Dashboard' }));
+    const cleared = LEVELS.filter((l) => App.progress[l.id] && App.progress[l.id].done).length;
+    const stats = [
+      ['Publications', c.publications], ['Retractions', c.retractions], ['Honest nulls', c.honestNulls],
+      ['Clean wins', c.cleanWins], ['"Decisive" wins', c.p001Wins], ['Levels cleared', cleared + ' / ' + LEVELS.length],
+      ['Est. replication rate', replicationRate() + '%'],
+    ];
+    const grid = el('div', { class: 'dash-grid' });
+    stats.forEach(([k, v]) => grid.appendChild(el('div', { class: 'dash-stat' }, [el('div', { class: 'k', text: k }), el('div', { class: 'v', text: String(v) })])));
+    body.appendChild(grid);
+
+    body.appendChild(el('div', { class: 'lesson-h', style: 'margin-top:12px', text: 'Achievements' }));
+    const ach = el('div', { class: 'ach-list' });
+    K.ACHIEVEMENTS.forEach((a) => {
+      const got = App.achievements.indexOf(a.id) >= 0;
+      ach.appendChild(el('div', { class: 'ach-item' + (got ? ' got' : ''), html: `${got ? '🏅' : '🔒'} <b>${a.title}</b> — ${got ? a.desc : '???'}` }));
+    });
+    body.appendChild(ach);
+
+    const row = el('div', { class: 'btnrow' });
+    if (cleared > 0) row.appendChild(el('button', { class: 'btn', onclick: replicationEpilogue }, ['Run Replication Crisis']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.progress = {}; App.achievements = []; App.career = loadCareer(); save(); saveAch(); showDashboard(); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']));
+    body.appendChild(row);
+    modal('Career Dashboard', body, { dismissable: true });
+  }
+
+  // ======================= SANDBOX LAB =======================
+  function showSandbox() {
+    const p = { n: 20, d: 0.5, sd: 10, mode: 't', r: 0.707 };
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🧪 Sandbox Lab' }));
+    body.appendChild(el('div', { class: 'hint', html: 'No game, no stakes — build intuition. Drag the sliders and watch the evidence react. Try: shrink <i>n</i> and watch <i>p</i> lurch; switch to Bayes and widen the prior to watch BF sink.' }));
+    const fig = el('div', {});
+    const out = el('div', { style: 'font-family:Consolas,monospace;font-size:13px;margin:8px 0;min-height:40px' });
+    const controls = el('div', {});
+
+    function mkSlider(label, key, min, max, step, fmtv) {
+      const wrap = el('div', { style: 'display:flex;align-items:center;gap:8px;margin:4px 0' });
+      const lab = el('div', { style: 'width:170px;font-size:12px' });
+      const val = el('span');
+      const inp = el('input', { type: 'range', min: min, max: max, step: step, value: p[key], style: 'flex:1' });
+      const setLab = () => { val.textContent = fmtv ? fmtv(p[key]) : p[key]; lab.innerHTML = label + ': <b>' + val.textContent + '</b>'; };
+      inp.addEventListener('input', () => { p[key] = parseFloat(inp.value); setLab(); recompute(); });
+      setLab();
+      wrap.appendChild(lab); wrap.appendChild(inp);
+      return wrap;
+    }
+    function recompute() {
+      const rng = RNG(20260617);
+      const A = [], B = [];
+      for (let i = 0; i < p.n; i++) A.push(rng.normal(50, p.sd));
+      for (let i = 0; i < p.n; i++) B.push(rng.normal(50 + p.d * p.sd, p.sd));
+      const tt = Stats.tTestIndependent(B, A, false);
+      const d = Stats.cohenD(A, B);
+      const ci = Stats.meanDiffCI(A, B);
+      out.innerHTML = '';
+      if (p.mode === 't') {
+        const sig = tt.p < 0.05;
+        out.innerHTML = `t(${fmt(tt.df, 0)}) = ${fmt(tt.t, 2)},  <b style="color:${sig ? '#15803d' : '#b91c1c'}">p = ${pfmt(tt.p)}</b>` +
+          `   ·   d = ${fmt(d, 2)}, 95% CI [${fmt(ci.lo, 2)}, ${fmt(ci.hi, 2)}]`;
+      } else {
+        const bf = PSPSS_bayes ? PSPSS_bayes.bf10TwoSample(tt.t, p.n, p.n, p.r) : NaN;
+        out.innerHTML = `<b style="color:${bf > 3 ? '#15803d' : '#b91c1c'}">BF₁₀ = ${bf >= 100 ? bf.toFixed(0) : bf.toFixed(2)}</b> (prior r=${p.r})   ·   d = ${fmt(d, 2)}`;
+      }
+      fig.innerHTML = '';
+      try { fig.appendChild(PSPSS_charts.boxplotByGroup([{ label: 'A', values: A }, { label: 'B', values: B }], { title: 'Sandbox data', ylabel: 'outcome' })); } catch (e) {}
+    }
+
+    const modeRow = el('div', { class: 'btnrow', style: 'margin:6px 0' });
+    const tBtn = el('button', { class: 'btn', onclick: () => { p.mode = 't'; tBtn.className = 'btn'; bBtn.className = 'btn ghost'; rWrap.style.display = 'none'; recompute(); } }, ['Frequentist (p)']);
+    const bBtn = el('button', { class: 'btn ghost', onclick: () => { p.mode = 'b'; bBtn.className = 'btn'; tBtn.className = 'btn ghost'; rWrap.style.display = ''; recompute(); } }, ['Bayesian (BF)']);
+    modeRow.appendChild(tBtn); modeRow.appendChild(bBtn);
+    controls.appendChild(modeRow);
+    controls.appendChild(mkSlider('n per group', 'n', 4, 200, 1));
+    controls.appendChild(mkSlider('true effect (d)', 'd', 0, 1.5, 0.05, (v) => v.toFixed(2)));
+    controls.appendChild(mkSlider('SD', 'sd', 2, 30, 1));
+    const rWrap = mkSlider('prior width r', 'r', 0.1, 2, 0.05, (v) => v.toFixed(2));
+    rWrap.style.display = 'none';
+    controls.appendChild(rWrap);
+
+    body.appendChild(controls);
+    body.appendChild(out);
+    body.appendChild(fig);
+    body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
+    modal('Sandbox Lab', body, { dismissable: true });
+    recompute();
+  }
+
+  // ======================= SPOT-THE-QRP QUIZ =======================
+  function showQuiz() {
+    let idx = 0, score = 0;
+    function render() {
+      const item = K.QUIZ_ITEMS[idx];
+      const picks = new Set();
+      let trustPick = null;
+      const body = el('div');
+      body.appendChild(el('h2', { text: `🔍 Spot the QRP  (${idx + 1}/${K.QUIZ_ITEMS.length})` }));
+      body.appendChild(el('div', { class: 'quiz-scenario', text: item.scenario }));
+      body.appendChild(el('div', { class: 'hint', text: 'Tick every questionable practice you can spot:' }));
+      const opts = el('div', { class: 'quiz-opts' });
+      K.QUIZ_OPTIONS.forEach((qk) => {
+        const lab = el('label', { class: 'quiz-opt' });
+        const cb = el('input', { type: 'checkbox' });
+        cb.addEventListener('change', () => { cb.checked ? picks.add(qk) : picks.delete(qk); });
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + K.QRP_INFO[qk].term));
+        opts.appendChild(lab);
+      });
+      body.appendChild(opts);
+      const trustRow = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+      const ty = el('button', { class: 'btn ghost', onclick: () => { trustPick = true; ty.className = 'btn'; tn.className = 'btn ghost'; } }, ['Trust it ✅']);
+      const tn = el('button', { class: 'btn ghost', onclick: () => { trustPick = false; tn.className = 'btn'; ty.className = 'btn ghost'; } }, ["Don't trust ❌"]);
+      trustRow.appendChild(el('span', { class: 'hint', style: 'align-self:center;margin-right:6px', text: 'Verdict:' }));
+      trustRow.appendChild(ty); trustRow.appendChild(tn);
+      body.appendChild(trustRow);
+
+      const fb = el('div', {});
+      body.appendChild(fb);
+      const actions = el('div', { class: 'btnrow' });
+      const submit = el('button', { class: 'btn', onclick: () => {
+        const correctSet = new Set(item.qrps);
+        const hits = [...picks].filter((x) => correctSet.has(x)).length;
+        const wrong = [...picks].filter((x) => !correctSet.has(x)).length;
+        const found = hits === correctSet.size && wrong === 0;
+        const trustOK = trustPick === item.trust;
+        if (found && trustOK) score++;
+        fb.innerHTML = '';
+        fb.appendChild(el('div', { class: 'reveal ' + (found && trustOK ? 'good' : 'warn'),
+          html: (found && trustOK ? '✅ Correct.' : '❌ Not quite.') + ' ' + item.explain +
+            (correctSet.size ? '<br><b>QRPs present:</b> ' + item.qrps.map((k) => K.QRP_INFO[k].term).join(', ') : '<br>This one is trustworthy — no QRPs.') }));
+        submit.remove();
+        actions.appendChild(el('button', { class: 'btn', onclick: () => { idx++; if (idx < K.QUIZ_ITEMS.length) render(); else finish(); } }, [idx + 1 < K.QUIZ_ITEMS.length ? 'Next ▸' : 'See score']));
+      } }, ['Submit']);
+      actions.appendChild(submit);
+      actions.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Quit']));
+      body.appendChild(actions);
+      modal('Spot the QRP', body, { dismissable: true });
+    }
+    function finish() {
+      const body = el('div');
+      body.appendChild(el('h2', { text: '🔍 Quiz Complete' }));
+      body.appendChild(el('div', { html: `You correctly assessed <b>${score}/${K.QUIZ_ITEMS.length}</b> studies. ` + (score === K.QUIZ_ITEMS.length ? 'A natural-born Reviewer 2.' : 'The Methods Codex awaits.') }));
+      body.appendChild(el('div', { class: 'btnrow' }, [
+        el('button', { class: 'btn', onclick: showQuiz }, ['Again']),
+        el('button', { class: 'btn ghost', onclick: showCodex }, ['Open Codex']),
+        el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']),
+      ]));
+      modal('Spot the QRP', body, { dismissable: true });
+    }
+    render();
   }
 
   // ---- toast ----

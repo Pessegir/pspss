@@ -54,6 +54,17 @@ Campaigns unlock in order (gated by clearing the previous one).
   non-significant and the game congratulates your integrity while your career dies.
 - **Replication Crisis epilogue:** high-suspicion papers fail to replicate years later.
 
+## Educational layer
+
+The game rewards skilled p-hacking so it can then indict it. Each level declares its data-generating
+`truth` (real effect vs. genuine null). After every study a **Debrief** names the QRP, its harm and
+citation, the honest alternative, and reveals whether the win was a real-but-invalid effect or a
+manufactured **false positive** — shown with **Cohen's d + 95% CI** (significance ≠ importance). A
+**Methods Codex** (real cases + antidotes), a **Sandbox Lab** (live p/BF vs. n/effect/prior), a
+**Spot-the-QRP quiz**, and a **Career Dashboard** with achievements round it out. Some finales add a
+**HOUSE RULE** (e.g. p < .001; Benjamin et al. 2018). Difficulty is uniform — no tutorial or easy mode
+by design.
+
 ## Architecture / build / test
 
 See `CLAUDE.md`. Modular `src/` (UMD IIFEs, Node + browser) → `node build.js` → one self-contained

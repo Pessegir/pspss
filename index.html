@@ -223,6 +223,43 @@ button.btn.danger { background: #b91c1c; border-color: #991b1b; }
 .hint { font-size: 12px; color: #6b6450; }
 a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
+/* HOUSE RULE banner (stricter thresholds) */
+.house-rule { background: #fff7ed; border: 1px solid #fdba74; border-left: 4px solid #ea580c; border-radius: 4px; padding: 8px 12px; margin: 10px 0; color: #7c2d12; }
+
+/* Debrief */
+.dbf { margin: 8px 0; line-height: 1.5; }
+.reveal { padding: 10px 12px; border-radius: 5px; margin: 10px 0; line-height: 1.5; }
+.reveal.bad { background: #fdecec; border: 1px solid #f5a6a6; color: #7f1d1d; }
+.reveal.warn { background: #fff7ed; border: 1px solid #fdba74; color: #7c2d12; }
+.reveal.good { background: #ecfdf3; border: 1px solid #86efac; color: #14532d; }
+.lesson { background: #f5f7ff; border: 1px solid #c7d2fe; border-radius: 5px; padding: 10px 12px; margin: 10px 0; line-height: 1.45; }
+.lesson-h { font-weight: 700; color: #1e3a5f; margin-bottom: 4px; }
+.lesson-harm { margin: 5px 0; }
+.lesson-cite { font-size: 11px; color: #6b6450; margin-top: 6px; }
+.vtag { font-size: 10px; border-radius: 8px; padding: 1px 7px; vertical-align: middle; }
+.vtag.bad { background: #b91c1c; color: #fff; }
+.vtag.ctx { background: #ca8a04; color: #fff; }
+.vtag.ok { background: #15803d; color: #fff; }
+.ach-pop { background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 8px 12px; margin: 10px 0; }
+
+/* Codex */
+.codex-card { background: #fbfaf6; border: 1px solid #c4bfb1; border-radius: 5px; padding: 10px 12px; margin: 8px 0; line-height: 1.45; }
+.codex-card.focus { border-color: #3b6ea5; box-shadow: 0 0 0 2px rgba(59,110,165,.25); }
+
+/* Dashboard */
+.dash-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.dash-stat { background: #fbfaf6; border: 1px solid #c4bfb1; border-radius: 5px; padding: 8px 10px; text-align: center; }
+.dash-stat .k { font-size: 10px; text-transform: uppercase; color: #7a7460; }
+.dash-stat .v { font-size: 18px; font-weight: 700; font-family: "Consolas", monospace; }
+.ach-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.ach-item { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #f0ede4; color: #9a958a; }
+.ach-item.got { background: #fffbeb; color: #1f2937; }
+
+/* Quiz */
+.quiz-scenario { background: #f3f1ea; border-left: 3px solid #3b6ea5; padding: 10px 12px; margin: 8px 0; font-style: italic; line-height: 1.5; }
+.quiz-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 6px 0; }
+.quiz-opt { font-size: 12px; display: flex; align-items: center; gap: 5px; padding: 3px 6px; cursor: pointer; }
+
 </style>
 </head>
 <body>
@@ -600,6 +637,48 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return M.map((row) => row.slice(n));
   }
 
+  // ---- effect size & confidence intervals ---------------------------------
+
+  // Cohen's d for two independent samples (pooled SD).
+  function cohenD(a, b) {
+    const na = a.length;
+    const nb = b.length;
+    const va = variance(a);
+    const vb = variance(b);
+    const pooled = Math.sqrt(((na - 1) * va + (nb - 1) * vb) / (na + nb - 2));
+    return (mean(b) - mean(a)) / pooled; // positive when b > a
+  }
+
+  // Critical t for a two-tailed CI at confidence `conf` (e.g. 0.95), via
+  // bisection on the already-trusted tDistTwoTailedP. Returns t such that the
+  // two-tailed p == 1 - conf.
+  function tCritical(df, conf) {
+    const target = 1 - (conf == null ? 0.95 : conf); // tail mass (e.g. 0.05)
+    let lo = 0;
+    let hi = 1000;
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2;
+      // tDistTwoTailedP decreases as t increases
+      if (tDistTwoTailedP(mid, df) > target) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  // 95% (or `conf`) CI for the difference in means (meanB - meanA), Welch SE.
+  function meanDiffCI(a, b, conf) {
+    const na = a.length;
+    const nb = b.length;
+    const va = variance(a);
+    const vb = variance(b);
+    const diff = mean(b) - mean(a);
+    const se = Math.sqrt(va / na + vb / nb);
+    const df = Math.pow(va / na + vb / nb, 2) /
+      (Math.pow(va / na, 2) / (na - 1) + Math.pow(vb / nb, 2) / (nb - 1));
+    const tc = tCritical(df, conf);
+    return { diff, lo: diff - tc * se, hi: diff + tc * se, se, df };
+  }
+
   const Stats = {
     // special functions / cdfs (exported for testing)
     logGamma,
@@ -622,6 +701,10 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     pearson,
     ols,
     ancova,
+    // effect size & CIs
+    cohenD,
+    tCritical,
+    meanDiffCI,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -1345,6 +1428,22 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     },
   ];
 
+  // Ground-truth of the data-generating process, for the post-level debrief's
+  // "was your finding real?" reveal. exists=false => a win is a manufactured
+  // FALSE POSITIVE; exists=true => the effect is real but obtained by an invalid
+  // route (untrustworthy / may not replicate). `higher` is the true direction.
+  const TRUTH = {
+    outlier: { exists: true, higher: 'B' },
+    skew: { exists: true, higher: 'B' },
+    confound: { exists: true, higher: 'B' },
+    'optional-stopping': { exists: true, higher: 'post' },
+    subgroup: { exists: true, higher: 'B' }, // real only in an unplanned subgroup
+    multiverse: { exists: true, higher: 'B' }, // real on a cherry-picked outcome
+    'wrong-direction': { exists: true, higher: 'A' }, // real, but OPPOSITE the hypothesis
+    'honest-null': { exists: false },
+  };
+  LEVELS.forEach((l) => { l.truth = TRUTH[l.id] || { exists: true, higher: 'B' }; });
+
   const api = { LEVELS };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
@@ -1407,11 +1506,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
         if (state.method === 'ols') {
           const r = ctx.Stats.tTestIndependent(A, B, false);
-          return { testName: 't-test on all cells (ignores animal)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+          return { testName: 't-test on all cells (ignores animal)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
         }
         const o = ctx.obsArrays(state);
         const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
-        return { testName: 'Mixed model (random intercept: animal)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A' };
+        return { testName: 'Mixed model (random intercept: animal)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -1440,7 +1539,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         const { A, B } = groupArrays(state.participants);
         const welch = state.method !== 'student';
         const r = ctx.Stats.tTestIndependent(A, B, welch);
-        return { testName: welch ? "Welch's t-test" : "Student's t-test (equal var)", statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+        return { testName: welch ? "Welch's t-test" : "Student's t-test (equal var)", statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -1507,7 +1606,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         const inter = treat.map((t, i) => t * modc[i]);
         const r = ctx.Stats.ols(y, [treat, modc, inter]);
         const c = r.coefs[3];
-        return { testName: state.medianSplit ? 'Moderation (median-split)' : 'Moderation (continuous)', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Interaction β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A' };
+        const gm = groupArrays(rows);
+        return { testName: state.medianSplit ? 'Moderation (median-split)' : 'Moderation (continuous)', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Interaction β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
       },
     },
 
@@ -1549,11 +1649,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
           const r = ctx.Stats.ols(y, [treat, cov]);
           const c = r.coefs[1];
           const lbl = (state.level.candidateControls.find((x) => x.id === state.controlVar) || {}).label;
-          return { testName: 'ANCOVA (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A' };
+          const gm = groupArrays(rows);
+          return { testName: 'ANCOVA (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
         }
         const { A, B } = groupArrays(rows);
         const r = ctx.Stats.tTestIndependent(A, B, false);
-        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
 
@@ -1634,7 +1735,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         const cols = [treat].concat(spec.controls.map((cid) => rows.map((r) => r[cid])));
         const r = ctx.Stats.ols(y, cols);
         const c = r.coefs[1];
-        return { testName: 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A' };
+        const gm = groupArrays(rows);
+        return { testName: 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
       },
     },
 
@@ -1642,7 +1744,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     {
       id: 'outcome-switch', campaign: 'c2', title: 'The Registered Primary Outcome',
       rank: 'Clinical Trialist', design: 'between', flaw: 'outcome-switch',
-      par: 1, seed: 2772, predictedHigher: 'B', winThreshold: 0.05,
+      par: 1, seed: 2772, predictedHigher: 'B', winThreshold: 0.001,
       allowedTools: ['pick-outcome'],
       dvLabels: { primary: 'Primary Endpoint', dv2: 'Biomarker A', dv3: 'Biomarker B', dv4: 'Quality of Life', dv5: 'Symptom Scale', dv6: 'Exploratory Index' },
       hypothesis: 'The drug (B) beats placebo (A) on the registered primary endpoint.',
@@ -1695,11 +1797,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
         if (state.method === 'ols') {
           const r = ctx.Stats.tTestIndependent(A, B, false);
-          return { testName: 't-test on all observations', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A' };
+          return { testName: 't-test on all observations', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
         }
         const o = ctx.obsArrays(state);
         const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
-        return { testName: 'Mixed model (random intercept: site)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A' };
+        return { testName: 'Mixed model (random intercept: site)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
   ];
@@ -1713,11 +1815,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   // appear only where their data exists. Each level's evaluate() honours just its
   // own flag, so non-matching tools cannot accidentally win (proved by levels.verify).
   const C2_MENU = ['choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'robustness-check'];
+  // Ground-truth for the debrief reveal (see levels.js). These levels manufacture
+  // a FALSE POSITIVE from genuine null structure; the rest have a real effect
+  // obtained by an invalid analysis.
+  const FALSE_POSITIVE = { 'two-kinds': 1, collider: 1, simpson: 1, 'spec-curve': 1, 'honest-lmm': 1 };
   LEVELS.forEach((l) => {
     if (l.lmm === undefined) l.lmm = true;
     if (l.moderator === undefined) l.moderator = 'mod';
     if (l.aggregable === undefined) l.aggregable = true;
     l.allowedTools = C2_MENU;
+    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
   });
 
   // register onto the shared LEVELS array
@@ -1767,6 +1874,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       testName: 'Bayesian t-test (Cauchy r=' + (+state.priorScale).toFixed(3) + (state.oneSided ? ', one-sided' : '') + ')',
       statLabel: 't', statistic: t, df: nu, bf, metricKind: 'bf', metricLabel,
       n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher,
+      aArr: A, bArr: B,
     };
   }
 
@@ -1843,6 +1951,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       build(seed) { return { participants: twoGroups(seed, 24, 24, 1, 10) }; },
     }),
   ];
+
+  // Ground-truth for the debrief reveal. bf01-flip and the default-prior trap are
+  // genuinely null (a "win" there is spin / a false positive); the rest have a real
+  // (if small) effect that prior-hacking merely overstates.
+  const FALSE_POSITIVE = { 'bf01-flip': 1, 'default-prior-trap': 1 };
+  LEVELS.forEach((l) => { l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' }; });
 
   const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
   LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
@@ -2017,14 +2131,27 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     const label = raw.metricLabel || (isBF ? 'BF₁₀' : 'p');
     const crossed = isBF ? value > thr : value < thr;
     const dirOK = raw.higher === state.predictedHigher;
-    return Object.assign({}, raw, {
+    // Effect size + 95% CI: provided directly, else derived from raw aArr/bArr
+    // (the standardized group difference). Teaches "significant ≠ important".
+    let effect = raw.effect;
+    let ci = raw.ci;
+    if (effect === undefined && raw.aArr && raw.bArr && raw.aArr.length > 1 && raw.bArr.length > 1) {
+      effect = Stats.cohenD(raw.aArr, raw.bArr);
+      ci = Stats.meanDiffCI(raw.aArr, raw.bArr);
+    }
+    const out = Object.assign({}, raw, {
       metricKind: isBF ? 'bf' : 'p',
       metricLabel: label,
       metricValue: value,
       goalText: isBF ? label + ' > ' + thr : label + ' < ' + thr,
       significant: crossed,
       win: crossed && dirOK,
+      effect,
+      ci,
     });
+    delete out.aArr;
+    delete out.bArr;
+    return out;
   }
 
   function analyze(state) {
@@ -2041,6 +2168,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
           : Stats.tTestPaired(post, pre);
       const mPre = Stats.mean(pre);
       const mPost = Stats.mean(post);
+      // paired effect (d_z) + CI on the mean change
+      const diffs = post.map((v, i) => v - pre[i]);
+      const sdd = Stats.sd(diffs);
+      const md = Stats.mean(diffs);
+      const tc = Stats.tCritical(diffs.length - 1, 0.95);
+      const se = sdd / Math.sqrt(diffs.length);
       return finalize(state, {
         testName: state.testType === 'nonparametric' ? 'Wilcoxon signed-rank' : 'Paired t-test',
         statLabel: state.testType === 'nonparametric' ? 'W' : 't',
@@ -2050,6 +2183,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         n: pre.length * 2,
         groups: { pre: mPre, post: mPost },
         higher: mPost >= mPre ? 'post' : 'pre',
+        effect: md / sdd,
+        ci: { diff: md, lo: md - tc * se, hi: md + tc * se },
       });
     }
 
@@ -2086,6 +2221,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return finalize(state, {
       testName, statLabel, statistic, df, p: res.p,
       n: A.length + B.length, groups: { A: mA, B: mB }, higher,
+      aArr: A, bArr: B,
     });
   }
 
@@ -2749,6 +2885,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       text: result.message || tool.label,
       move: isMove,
       chart: result.chart || null,
+      toolId: tool.id,
     });
 
     // Fabrication can get you caught immediately.
@@ -2969,6 +3106,367 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PSPSS_charts = api;
+})(typeof self !== 'undefined' ? self : this);
+
+
+// ===================== knowledge.js =====================
+/*
+ * PSPSS knowledge base — the educational layer that powers the post-level
+ * Debrief, the Methods Codex, the "Spot the QRP" quiz, and Achievements.
+ *
+ * Everything here is real methodology with real citations. The game rewards
+ * skilled p-hacking precisely so this layer can show you why that's the disease.
+ *
+ * Works in Node (module.exports) and the browser (window.PSPSS_knowledge).
+ */
+(function (root) {
+  'use strict';
+
+  // QRP_INFO is keyed by a level's `flaw`. Each entry powers one Codex card and
+  // the debrief. verdict: 'invalid' (a genuine malpractice) | 'context' (a
+  // legitimate move that becomes a QRP only when done to chase significance) |
+  // 'honest' (the dignified non-result).
+  const QRP_INFO = {
+    outlier: {
+      term: 'Post-hoc outlier exclusion',
+      plain: 'Deleting "anomalous" data points after seeing that they spoil the result.',
+      harm: 'Flexible, motivated exclusion is a textbook researcher degree of freedom — a few such choices can push the false-positive rate well above 5%.',
+      citation: 'Simmons, Nelson & Simonsohn (2011), "False-Positive Psychology".',
+      realCase: 'Exclusion rules that differ across conditions are a recurring red flag in failed replications.',
+      antidote: 'Pre-register exclusion criteria before looking; report results with and without exclusions.',
+      verdict: 'invalid',
+    },
+    skew: {
+      term: 'Transform-shopping',
+      plain: 'Trying transformations (log, sqrt, …) and keeping whichever one makes p < .05.',
+      harm: 'A transformation chosen for its p-value is an undisclosed analytic choice in the garden of forking paths.',
+      citation: 'Gelman & Loken (2013), "The garden of forking paths".',
+      realCase: 'Outcome transformations are a common silent fork in psychology pipelines.',
+      antidote: 'Decide the scale a priori from theory/measurement, not from the p-value.',
+      verdict: 'invalid',
+    },
+    confound: {
+      term: 'Covariate adjustment (done right vs. fished)',
+      plain: 'Adding a covariate (ANCOVA) that genuinely confounds the effect.',
+      harm: 'Adjusting for a real, pre-specified confounder is GOOD science. The QRP is adding covariates one by one until significance appears.',
+      citation: 'Simmons et al. (2011) on covariate flexibility.',
+      realCase: 'Here you recovered a real effect legitimately — the danger is the same tool used to fish.',
+      antidote: 'Pre-specify covariates and justify them causally (a DAG helps).',
+      verdict: 'context',
+    },
+    'optional-stopping': {
+      term: 'Optional stopping',
+      plain: 'Peeking at the data as it accrues and stopping the moment p < .05.',
+      harm: 'With repeated peeking and no correction, the false-positive rate climbs from 5% toward ~30%+.',
+      citation: 'Simmons et al. (2011); Armitage et al. (1969) on sequential analysis.',
+      realCase: 'A leading driver of unreplicable findings in fields without preregistration.',
+      antidote: 'Fix N in advance, or use sequential designs with proper alpha-spending.',
+      verdict: 'invalid',
+    },
+    subgroup: {
+      term: 'Unplanned subgroup analysis',
+      plain: 'Slicing the sample into subgroups and reporting the one where the effect appears.',
+      harm: 'Testing many subgroups guarantees some "significant" ones by chance — the Texas sharpshooter fallacy.',
+      citation: 'Wallach et al. (2017); the SNP/astrology-sign subgroup parodies in clinical trials.',
+      realCase: 'The ISIS-2 trial famously showed a fake "no benefit for Gemini/Libra" subgroup to make the point.',
+      antidote: 'Pre-register subgroups; correct for multiplicity; treat subgroup effects as hypothesis-generating.',
+      verdict: 'invalid',
+    },
+    multiverse: {
+      term: 'Selective outcome reporting',
+      plain: 'Measuring many outcomes and reporting the one that "worked".',
+      harm: 'Each extra outcome is another lottery ticket for a false positive; reporting only winners is publication bias in miniature.',
+      citation: 'John, Loewenstein & Prelec (2012); Ioannidis (2005).',
+      realCase: 'Outcome switching between registration and publication is widespread (see COMPare project).',
+      antidote: 'Designate one primary outcome in advance; report all measured outcomes.',
+      verdict: 'invalid',
+    },
+    'wrong-direction': {
+      term: 'HARKing',
+      plain: 'Hypothesizing After the Results are Known — rewriting your prediction to match the data.',
+      harm: 'Turns an exploratory surprise into a fake confirmation, destroying the logic of the hypothesis test.',
+      citation: 'Kerr (1998), "HARKing".',
+      realCase: 'Endemic wherever introductions are written after results.',
+      antidote: 'Preregister directional hypotheses; label post-hoc findings as exploratory.',
+      verdict: 'invalid',
+    },
+    'honest-null': {
+      term: 'Reporting a null result',
+      plain: 'Accepting that the effect is not there and saying so.',
+      harm: 'None — this is the honest path. The cost is cultural: null results are under-published (the file-drawer problem).',
+      citation: 'Rosenthal (1979), the "file drawer problem".',
+      realCase: 'Registered Reports exist precisely to publish well-designed nulls.',
+      antidote: 'You did it. Submit it as a Registered Report.',
+      verdict: 'honest',
+    },
+    pseudoreplication: {
+      term: 'Pseudoreplication',
+      plain: 'Treating non-independent observations (cells within an animal) as independent to inflate N.',
+      harm: 'Ignoring clustering shrinks the standard error and manufactures significance from a handful of true units.',
+      citation: 'Hurlbert (1984); Aarts et al. (2014) in neuroscience.',
+      realCase: 'Counting neurons/cells as N instead of animals is a classic neuroscience error.',
+      antidote: 'Model the grouping (mixed-effects model) or analyze cluster means.',
+      verdict: 'invalid',
+    },
+    'wrong-test': {
+      term: 'Using the wrong test',
+      plain: 'Picking a test whose assumptions are violated because it gives the smaller p.',
+      harm: "Student's t with unequal variances and unequal n is anticonservative — the false-positive rate isn't 5%.",
+      citation: 'Delacre, Lakens & Leys (2017) — default to Welch.',
+      realCase: 'Equal-variance t-tests are still the silent default in much of psychology.',
+      antidote: 'Choose the test from the design and assumptions in advance (Welch by default).',
+      verdict: 'invalid',
+    },
+    'random-slopes': {
+      term: 'Mixed-model under-specification',
+      plain: 'Dropping justified random slopes so the fixed effect looks more certain than it is.',
+      harm: 'Random-intercept-only models for within-subject effects are anticonservative — inflated t, tiny p.',
+      citation: 'Barr et al. (2013), "Keep it maximal"; Matuschek et al. (2017).',
+      realCase: 'A major reason early psycholinguistics effects failed to replicate.',
+      antidote: 'Use the maximal random-effects structure justified by the design.',
+      verdict: 'invalid',
+    },
+    'median-split': {
+      term: 'Dichotomizing a continuous variable',
+      plain: 'Median-splitting a continuous moderator to manufacture a clean interaction.',
+      harm: 'Throws away information, lowers power, and can create spurious interactions out of noise.',
+      citation: 'MacCallum, Zhang, Preacher & Rucker (2002).',
+      realCase: '"Two types of people" findings often evaporate when the variable is analyzed continuously.',
+      antidote: 'Keep continuous variables continuous; model the interaction directly.',
+      verdict: 'invalid',
+    },
+    collider: {
+      term: 'Collider / post-treatment control',
+      plain: 'Adjusting for a variable affected by the treatment (or by both treatment and outcome).',
+      harm: 'Conditioning on a collider opens a non-causal path and creates an association from nothing.',
+      citation: 'Montgomery, Nyhan & Torres (2018); Pearl (causal DAGs).',
+      realCase: 'Controlling for post-treatment mediators is a frequent cause of spurious effects in observational work.',
+      antidote: 'Only adjust for pre-treatment confounders; draw the causal DAG first.',
+      verdict: 'invalid',
+    },
+    simpson: {
+      term: "Simpson's paradox / ecological fallacy",
+      plain: 'Choosing the level of aggregation (pooled vs. group means) that points your way.',
+      harm: 'A relationship can reverse sign between individual and aggregate levels; picking the convenient one misleads.',
+      citation: "Simpson (1951); Robinson (1950), the ecological fallacy.",
+      realCase: 'The Berkeley admissions "bias" reversed once you conditioned on department.',
+      antidote: 'Analyze at the level your question is about; model the grouping explicitly.',
+      verdict: 'invalid',
+    },
+    'spec-curve': {
+      term: 'Specification search',
+      plain: 'Running many defensible analysis specifications and reporting the one that is significant.',
+      harm: 'Across the multiverse of reasonable choices, some will be significant by chance even when nothing is there.',
+      citation: 'Steegen et al. (2016), multiverse analysis; Simonsohn et al. specification curve.',
+      realCase: 'Different teams given the same data reach different conclusions (Silberzahn et al. 2018).',
+      antidote: 'Report the whole specification curve, not the best corner.',
+      verdict: 'invalid',
+    },
+    'outcome-switch': {
+      term: 'Outcome switching',
+      plain: 'Swapping your registered primary endpoint for a secondary one that reached significance.',
+      harm: 'Breaks the pre-registration that controls the error rate; the "primary" was the one that counted.',
+      citation: 'The COMPare Trials project; Goldacre et al. (2019).',
+      realCase: 'Many published trials silently switch primary outcomes from their registration.',
+      antidote: 'Report the registered primary outcome as primary, full stop.',
+      verdict: 'invalid',
+    },
+    'honest-lmm': {
+      term: 'The correctly specified (null) model',
+      plain: 'You specified the model correctly and there was simply nothing there.',
+      harm: 'None — this is the honest path.',
+      citation: 'Rosenthal (1979), the file-drawer problem.',
+      realCase: 'Well-specified nulls are exactly what Registered Reports protect.',
+      antidote: 'Report the null; it is information.',
+      verdict: 'honest',
+    },
+    // ---- Campaign 3 (Bayesian) ----
+    'prior-width': {
+      term: 'Prior-width hacking',
+      plain: 'Tuning the prior scale until the Bayes factor clears the threshold.',
+      harm: 'The Bayes factor depends on the prior; choosing it after seeing data is p-hacking in a robe.',
+      citation: 'Rouder et al. (2009); Wagenmakers et al. (2018) on default priors.',
+      realCase: 'Bayesian analyses are not automatically immune to researcher degrees of freedom.',
+      antidote: 'Pre-register the prior; report a prior-sensitivity (robustness) analysis honestly.',
+      verdict: 'invalid',
+    },
+    'optional-stopping-bayes': {
+      term: 'Bayesian optional stopping',
+      plain: 'Collecting data until the Bayes factor looks convincing, then stopping.',
+      harm: 'Open-ended sampling with a BF stopping rule still inflates the rate of misleading evidence.',
+      citation: 'Schönbrodt et al. (2017); Rouder (2014) vs. its critics.',
+      realCase: '"BFs license optional stopping" is a widespread overstatement.',
+      antidote: 'Plan the design (e.g., Sequential Bayes Factor with a registered stopping rule).',
+      verdict: 'invalid',
+    },
+    'one-sided': {
+      term: 'Post-hoc one-sided prior',
+      plain: 'Switching to a directional prior after seeing the direction — it roughly doubles the BF.',
+      harm: 'A directional prior is fine only if truly pre-planned; chosen post hoc it inflates the evidence.',
+      citation: 'Rouder et al. (2009) on directional/half-Cauchy priors.',
+      realCase: 'Directional hypotheses "remembered" after the result are HARKing with priors.',
+      antidote: 'Only use a one-sided prior when the direction was committed in advance.',
+      verdict: 'invalid',
+    },
+    'bf01-flip': {
+      term: 'Relabeling BF₀₁ as support',
+      plain: 'The evidence favors the null (BF₀₁ large); you report it as "strong evidence" for your story.',
+      harm: 'BF₀₁ = 1/BF₁₀ supports the NULL. Reporting it as support for the alternative is a sleight of subscript.',
+      citation: 'Jeffreys (1961) on BF interpretation; Wagenmakers et al. (2018).',
+      realCase: 'Evidence for the null is real evidence — it should be reported as such.',
+      antidote: 'State which hypothesis the BF favors, plainly.',
+      verdict: 'invalid',
+    },
+    'prior-robustness': {
+      term: 'Cherry-picking the robustness analysis',
+      plain: 'Running a "robustness across priors" and reporting only the prior with the biggest BF.',
+      harm: 'A robustness check is meant to show the RANGE; reporting its maximum defeats the purpose.',
+      citation: 'Wagenmakers et al. (2018) on honest robustness reporting.',
+      realCase: 'A robustness plot that only shows the flattering corner is not robust.',
+      antidote: 'Report the full range and conclusion stability, not the best case.',
+      verdict: 'invalid',
+    },
+    capstone: {
+      term: 'Stacking degrees of freedom',
+      plain: 'Combining several individually-weak hacks (collect more AND go one-sided) to clear a high bar.',
+      harm: 'Each choice is a fork; stacked together they make "decisive evidence" out of noise.',
+      citation: 'Simmons et al. (2011); Gelman & Loken (2013).',
+      realCase: 'Real pipelines rarely use one QRP — they accumulate.',
+      antidote: 'Preregistration constrains the whole pipeline at once.',
+      verdict: 'invalid',
+    },
+    'honest-bayes': {
+      term: 'Ambiguous evidence, honestly reported',
+      plain: 'Under sensible priors the Bayes factor sits near 1 — the data are genuinely inconclusive.',
+      harm: 'None — saying "inconclusive" is honest, and BFs are good at expressing it.',
+      citation: 'Keysers, Gazzola & Wagenmakers (2020) on reporting evidence for absence.',
+      realCase: 'Inconclusive is a legitimate, publishable conclusion.',
+      antidote: 'Report the ambiguity; collect a preregistered, adequately-powered sample.',
+      verdict: 'honest',
+    },
+  };
+
+  // Short "what you did" label per tool id, for the debrief's action list.
+  const TOOL_LABEL = {
+    'refine-sample': 'excluded "outliers" after seeing them',
+    winsorize: 'winsorized the extremes',
+    'log-transform': 'log-transformed until it looked normal',
+    'robustness-check': 'switched to whichever test cooperated',
+    'control-covariate': 'added a covariate',
+    'explore-subgroups': 'restricted to a subgroup',
+    'pick-outcome': 'reported a different outcome',
+    'recruit-more': 'collected more data and re-peeked',
+    reframe: 'rewrote the hypothesis to fit the data',
+    fabricate: 'fabricated data points',
+    'choose-test': 'chose a different statistical test',
+    'fit-lmm': 'changed the mixed-model structure',
+    'median-split': 'median-split a continuous variable',
+    'add-control': 'controlled for a chosen covariate',
+    'set-aggregation': 'changed the level of aggregation',
+    'spec-multiverse': 'searched specifications and kept the winner',
+    'set-prior': 'tuned the prior width',
+    'one-sided-prior': 'switched to a one-sided prior',
+    'collect-more-bayes': 'collected more data until the BF rose',
+    'report-bf01': 'reported BF₀₁ as if it supported you',
+    'prior-robustness': 'kept the most flattering prior',
+  };
+
+  // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
+  // for matching them and the trust verdict. Options shown come from QUIZ_OPTIONS.
+  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width'];
+
+  const QUIZ_ITEMS = [
+    {
+      id: 'q1',
+      scenario: '"We ran 40 participants, checked the result, and since p = .07 we collected 20 more until p = .045. The effect was significant."',
+      qrps: ['optional-stopping'], trust: false,
+      explain: 'Classic optional stopping: peeking and topping up inflates the false-positive rate badly.',
+    },
+    {
+      id: 'q2',
+      scenario: '"After excluding 6 participants whose scores were unusually high (they seemed unmotivated), the predicted difference reached significance."',
+      qrps: ['outlier'], trust: false,
+      explain: 'Exclusions decided after seeing the data — and only on one tail — is motivated outlier removal.',
+    },
+    {
+      id: 'q3',
+      scenario: '"We measured anxiety, mood, focus, sleep, and creativity. The intervention significantly improved creativity (p = .03)."',
+      qrps: ['multiverse'], trust: false,
+      explain: 'Five outcomes, one winner reported: selective outcome reporting / a small multiverse.',
+    },
+    {
+      id: 'q4',
+      scenario: '"There was no overall effect, but among left-handed women over 40 the treatment worked (p = .04)."',
+      qrps: ['subgroup'], trust: false,
+      explain: 'An unplanned, oddly specific subgroup — the Texas sharpshooter fallacy.',
+    },
+    {
+      id: 'q5',
+      scenario: '"Counting each of the 5 recordings from all 8 mice as independent (N = 40), the groups differed significantly."',
+      qrps: ['pseudoreplication'], trust: false,
+      explain: 'Cells within an animal are not independent; the real N is 8, not 40.',
+    },
+    {
+      id: 'q6',
+      scenario: '"We pre-registered the analysis, ran exactly that test on the planned N, and report the result (p = .002) plus all measured outcomes."',
+      qrps: [], trust: true,
+      explain: 'No QRPs flagged: pre-registered, fixed N, full reporting. This is the trustworthy one.',
+    },
+    {
+      id: 'q7',
+      scenario: '"We split participants at the median into high- and low-empathy groups; the interaction with condition was significant."',
+      qrps: ['median-split'], trust: false,
+      explain: 'Dichotomizing a continuous measure manufactures clean interactions and loses power.',
+    },
+    {
+      id: 'q8',
+      scenario: '"Adjusting for participants\' post-study engagement, the treatment showed a clear benefit (engagement was measured after treatment)."',
+      qrps: ['collider'], trust: false,
+      explain: 'Engagement is post-treatment — controlling for a collider conjures an effect.',
+    },
+    {
+      id: 'q9',
+      scenario: '"We tried 18 reasonable covariate combinations; the model controlling for age and city was significant, so we report that one."',
+      qrps: ['spec-curve'], trust: false,
+      explain: 'A specification search reporting only the significant model — report the whole curve.',
+    },
+    {
+      id: 'q10',
+      scenario: '"Our two-sided Bayes factor was 1.8, but with a narrower prior it rose to 3.2, so we conclude there is substantial evidence."',
+      qrps: ['prior-width'], trust: false,
+      explain: 'The prior was tuned after seeing the data to clear the BF threshold — prior-hacking.',
+    },
+  ];
+
+  // Achievements. `check(ctx)` runs against a context built by the UI:
+  //   ctx = { event, level, state, stars, suspicion, moves, par, career }
+  // career = { publications, retractions, honestNulls, cleanWins, p001Wins }
+  const ACHIEVEMENTS = [
+    { id: 'first-blood', title: 'First Author', desc: 'Publish your first "significant" finding.', check: (c) => c.career.publications >= 1 },
+    { id: 'beat-par', title: 'Surgical', desc: 'Win a level at or under par.', check: (c) => c.event === 'win' && c.moves <= c.par },
+    { id: 'clean', title: 'Above Suspicion', desc: 'Publish with Suspicion at 0%.', check: (c) => c.event === 'win' && c.suspicion === 0 },
+    { id: 'fabricator', title: 'Persona Non Grata', desc: 'Get a paper retracted for fabrication.', check: (c) => c.event === 'retract' },
+    { id: 'honest', title: 'Honest to a Fault', desc: 'Report a null result honestly.', check: (c) => c.event === 'honest' },
+    { id: 'salami', title: 'Salami Slicer', desc: 'Win by slicing to a subgroup.', check: (c) => c.event === 'win' && c.level.flaw === 'subgroup' },
+    { id: 'sharpshooter', title: 'Texas Sharpshooter', desc: 'Win by switching the reported outcome.', check: (c) => c.event === 'win' && /multiverse|outcome-switch/.test(c.level.flaw) },
+    { id: 'forking', title: 'Garden Tour Guide', desc: 'Win via a specification search.', check: (c) => c.event === 'win' && c.level.flaw === 'spec-curve' },
+    { id: 'prior-whisperer', title: 'Prior Whisperer', desc: 'Clear a Bayesian level by tuning the prior.', check: (c) => c.event === 'win' && /prior/.test(c.level.flaw) },
+    { id: 'decisive', title: 'Decisive (Allegedly)', desc: 'Clear a "house rule" level (p < .001 or BF > 10).', check: (c) => c.event === 'win' && c.career.p001Wins >= 1 },
+    { id: 'prolific', title: 'Prolific', desc: 'Reach 10 publications.', check: (c) => c.career.publications >= 10 },
+  ];
+
+  function evaluateAchievements(ctx, already) {
+    const have = new Set(already || []);
+    const newly = [];
+    ACHIEVEMENTS.forEach((a) => {
+      if (!have.has(a.id)) { try { if (a.check(ctx)) newly.push(a.id); } catch (e) {} }
+    });
+    return newly;
+  }
+
+  const api = { QRP_INFO, TOOL_LABEL, QUIZ_ITEMS, QUIZ_OPTIONS, ACHIEVEMENTS, evaluateAchievements };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PSPSS_knowledge = api;
 })(typeof self !== 'undefined' ? self : this);
 
 
@@ -3261,13 +3759,22 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     levelIndex: 0,
     state: null,
     progress: load(),
+    achievements: loadAch(),
+    career: loadCareer(),
   };
 
   function load() {
     try { return JSON.parse(localStorage.getItem('pspss_progress') || '{}'); }
     catch (e) { return {}; }
   }
+  function loadAch() { try { return JSON.parse(localStorage.getItem('pspss_ach') || '[]'); } catch (e) { return []; } }
+  function loadCareer() {
+    const d = { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 };
+    try { return Object.assign(d, JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return d; }
+  }
   function save() { try { localStorage.setItem('pspss_progress', JSON.stringify(App.progress)); } catch (e) {} }
+  function saveAch() { try { localStorage.setItem('pspss_ach', JSON.stringify(App.achievements)); localStorage.setItem('pspss_career', JSON.stringify(App.career)); } catch (e) {} }
+  const K = (typeof PSPSS_knowledge !== 'undefined') ? PSPSS_knowledge : null;
 
   // ========================================================================
   // START SCREEN / CAMPAIGN MAP
@@ -3292,6 +3799,15 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     pre.appendChild(document.createTextNode('Preregistration mode (declare ONE analysis up front — honest, brutal)'));
     controls.appendChild(pre);
     wrap.appendChild(controls);
+
+    // learn / play / profile entry points
+    const tools = el('div', { class: 'btnrow', style: 'margin-top:8px' }, [
+      el('button', { class: 'btn ghost', onclick: showCodex }, ['📖 Methods Codex']),
+      el('button', { class: 'btn ghost', onclick: showSandbox }, ['🧪 Sandbox Lab']),
+      el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
+      el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
+    ]);
+    wrap.appendChild(tools);
 
     wrap.appendChild(el('div', { class: 'hint', style: 'margin:12px 0 4px',
       html: 'Each study is rigged to be non-significant. Use the menus to <i>diagnose</i> the flaw (free), then apply the right Questionable Research Practice to torture it into significance. Fewer moves = more stars.' }));
@@ -3453,8 +3969,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     if (menuName === 'Help') {
       return [
         { label: 'About PSPSS', run: showHow },
+        { label: '📖 Methods Codex', tip: 'What each trick really is, and how to do it right.', run: () => showCodex() },
         { label: 'Cite this software', run: () => toast('Desperate, A. (2026). PSPSS [Software]. Self-published, weeping.') },
-        { label: 'Statistical Methods Help (404)', run: () => toast('Page not found. Try p < 0.05.') },
       ];
     }
     // tool menus — only show tools relevant to this level (toolEnabled honours allowedTools)
@@ -3660,6 +4176,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     tbl.appendChild(row);
     block.appendChild(tbl);
 
+    // effect size + 95% CI — significance is not importance
+    if (a.effect !== undefined && a.effect !== null && Number.isFinite(a.effect)) {
+      const ciTxt = a.ci ? `, 95% CI [${fmt(a.ci.lo, 2)}, ${fmt(a.ci.hi, 2)}]` : '';
+      const spansZero = a.ci && a.ci.lo < 0 && a.ci.hi > 0;
+      block.appendChild(el('div', { class: 'out-note out-effect', html: `Effect size: Cohen's <i>d</i> = <b>${fmt(a.effect, 2)}</b>${ciTxt}` + (spansZero ? ' <span class="out-flag">— CI spans zero</span>' : '') }));
+    }
+
     if (a.significant && !a.win) {
       block.appendChild(el('div', { class: 'out-flag', text: '⚠ Crossed the threshold — but in the WRONG direction. Your hypothesis predicted the other way.' }));
     }
@@ -3707,6 +4230,14 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     body.appendChild(el('div', { class: 'rank', style: 'font-style:italic;color:#6b6450;margin-bottom:8px', text: lv.rank }));
     body.appendChild(el('div', { html: lv.brief }));
     body.appendChild(el('div', { class: 'hyp', html: '<b>Your hypothesis:</b> ' + lv.hypothesis }));
+
+    // HOUSE RULE banner when the bar is stricter than the usual .05 / BF>3
+    const a0 = E.analyze(App.state);
+    const strict = lv.winThreshold != null && (a0.metricKind === 'bf' ? lv.winThreshold > 3 : lv.winThreshold < 0.05);
+    if (strict) {
+      const bar = a0.metricKind === 'bf' ? 'BF₁₀ > ' + lv.winThreshold : 'p < ' + lv.winThreshold;
+      body.appendChild(el('div', { class: 'house-rule', html: `🏛️ <b>HOUSE RULE.</b> The reviewers here smell a rat at the usual threshold. Nothing counts unless you clear <b>${bar}</b>. (Yes, that's a real thing — some fields now demand p &lt; .005 to call a result "significant". Benjamin et al., 2018.)` }));
+    }
 
     if (App.prereg) {
       body.appendChild(el('div', { class: 'out-flag', style: 'margin:8px 0', text: 'PREREGISTRATION MODE: you must commit to ONE analysis now, before exploring. No take-backs. Good luck. You will need actual data on your side.' }));
@@ -3822,8 +4353,37 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       body.appendChild(starRow({ stars: 3, clean: true }));
     }
 
+    const newly = updateCareer(event, a, stars);
+
+    // The debrief is the lesson — make it the natural next step.
+    const row = el('div', { class: 'btnrow' });
+    row.appendChild(el('button', { class: 'btn', onclick: () => showDebrief(event, a, newly) }, ['📋 What really happened →']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Skip to Map']));
+    body.appendChild(row);
+    modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+  }
+
+  // update persistent career stats + unlock achievements; returns newly unlocked ids
+  function updateCareer(event, a, stars) {
+    const lv = App.state.level;
+    const strict = lv.winThreshold != null && (a.metricKind === 'bf' ? lv.winThreshold >= 10 : lv.winThreshold <= 0.01);
+    if (event === 'win') { App.career.publications++; if (stars.clean) App.career.cleanWins++; if (strict) App.career.p001Wins++; }
+    else if (event === 'retract') App.career.retractions++;
+    else if (event === 'honest' || event === 'prereg-null') App.career.honestNulls++;
+    let newly = [];
+    if (K) {
+      const ctx = { event, level: lv, state: App.state, stars: stars.stars, suspicion: App.state.suspicion, moves: App.state.moves, par: lv.par, career: App.career };
+      newly = K.evaluateAchievements(ctx, App.achievements);
+      App.achievements = App.achievements.concat(newly);
+    }
+    saveAch();
+    return newly;
+  }
+
+  function navButtons(event) {
     const row = el('div', { class: 'btnrow' });
     const next = App.levelIndex + 1;
+    const lv = App.state.level;
     const nextSameCampaign = next < LEVELS.length && campaignOf(LEVELS[next].id) === campaignOf(lv.id);
     if ((event === 'win' || event === 'honest' || event === 'prereg-null') && nextSameCampaign) {
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startLevel(next); } }, ['Next Study ▸']));
@@ -3832,8 +4392,71 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startLevel(App.levelIndex); } }, ['Try Again']));
     }
     row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Campaign Map']));
-    body.appendChild(row);
-    modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+    return row;
+  }
+
+  // ---- the post-level DEBRIEF: the educational payoff ----
+  function showDebrief(event, a, newly) {
+    const lv = App.state.level;
+    const info = K && K.QRP_INFO[lv.flaw];
+    const tenure = App.mode === 'tenure';
+    const body = el('div');
+    body.appendChild(el('h2', { text: '📋 Debrief: ' + lv.title }));
+
+    // what you did (mapped from the move log)
+    const used = [];
+    App.state.log.forEach((e) => { if (e.move && e.toolId && K && K.TOOL_LABEL[e.toolId]) used.push(K.TOOL_LABEL[e.toolId]); });
+    if (used.length) body.appendChild(el('div', { class: 'dbf', html: '<b>What you did:</b> you ' + used.join('; then ') + '.' }));
+
+    // the truth reveal
+    const reveal = el('div', { class: 'reveal' });
+    if (event === 'retract') {
+      reveal.className = 'reveal bad';
+      reveal.innerHTML = '🚨 <b>Caught.</b> You fabricated data and PubPeer noticed. This is the one move that is not a "questionable" practice — it is fraud.';
+    } else if (event === 'honest' || event === 'prereg-null') {
+      reveal.className = 'reveal good';
+      reveal.innerHTML = lv.truth && lv.truth.exists
+        ? '🕊️ <b>You walked away from a real (but unprovable-here) effect.</b> Honest, if costly — exactly the trade-off that makes good science hard.'
+        : '🕊️ <b>You were right to walk away — there was nothing here.</b> A null, honestly reported, is real knowledge.';
+    } else if (lv.truth && lv.truth.exists === false) {
+      reveal.className = 'reveal bad';
+      reveal.innerHTML = '🎭 <b>That was a FALSE POSITIVE.</b> There was no real effect in the data-generating process — you manufactured the result. This is precisely how false findings enter the literature.';
+    } else if (lv.flaw === 'wrong-direction') {
+      reveal.className = 'reveal warn';
+      reveal.innerHTML = '🔁 <b>A real effect existed — but OPPOSITE to your hypothesis.</b> You rewrote the prediction to match it (HARKing). The finding is "true", the inference is theatre.';
+    } else {
+      reveal.className = 'reveal warn';
+      reveal.innerHTML = '⚠️ <b>The effect was real — but your route to it was invalid.</b> A reviewer can\'t distinguish your "significant" result from luck, and it may not replicate.';
+    }
+    body.appendChild(reveal);
+
+    // effect size honesty
+    if (a && a.effect !== undefined && Number.isFinite(a.effect)) {
+      const ciTxt = a.ci ? ` (95% CI of the difference [${fmt(a.ci.lo, 2)}, ${fmt(a.ci.hi, 2)}]${a.ci.lo < 0 && a.ci.hi > 0 ? ', which spans zero' : ''})` : '';
+      body.appendChild(el('div', { class: 'dbf', html: `<b>Effect size:</b> Cohen's <i>d</i> = ${fmt(a.effect, 2)}${ciTxt}. Remember: a small p-value is not a large or certain effect.` }));
+    }
+
+    // the QRP lesson
+    if (info) {
+      const verdictTag = info.verdict === 'context' ? '<span class="vtag ctx">context-dependent</span>' : info.verdict === 'honest' ? '<span class="vtag ok">the honest path</span>' : '<span class="vtag bad">questionable practice</span>';
+      const lesson = el('div', { class: 'lesson' });
+      lesson.innerHTML = `<div class="lesson-h">${info.term} ${verdictTag}</div>` +
+        `<div>${info.plain}</div>` +
+        `<div class="lesson-harm"><b>Why it matters:</b> ${info.harm}</div>` +
+        `<div><b>Do instead:</b> ${info.antidote}</div>` +
+        (tenure ? `<div class="lesson-cite">${info.realCase}<br><i>${info.citation}</i></div>` : '');
+      body.appendChild(lesson);
+      const link = el('a', { class: 'link', onclick: () => showCodex(lv.flaw) }, ['Open in Methods Codex →']);
+      body.appendChild(el('div', { style: 'margin-top:6px' }, [link]));
+    }
+
+    if (newly && newly.length && K) {
+      const names = newly.map((id) => (K.ACHIEVEMENTS.find((x) => x.id === id) || {}).title).filter(Boolean);
+      if (names.length) body.appendChild(el('div', { class: 'ach-pop', html: '🏅 <b>Achievement unlocked:</b> ' + names.join(', ') }));
+    }
+
+    body.appendChild(navButtons(event));
+    modal('Debrief', body);
   }
 
   function starRow(s) {
@@ -3890,6 +4513,193 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     row.appendChild(el('button', { class: 'btn', onclick: closeModal }, ['Got it']));
     body.appendChild(row);
     modal('About PSPSS', body, { dismissable: true });
+  }
+
+  // ======================= METHODS CODEX =======================
+  function showCodex(focusFlaw) {
+    const body = el('div');
+    body.appendChild(el('h2', { text: '📖 Methods Codex' }));
+    body.appendChild(el('div', { class: 'hint', text: 'Every trick in the game is a real Questionable Research Practice. Here is what each one is, why it misleads, and how to do it right.' }));
+    const keys = Object.keys(K.QRP_INFO);
+    keys.sort((a, b) => (a === focusFlaw ? -1 : b === focusFlaw ? 1 : 0));
+    keys.forEach((k) => {
+      const e = K.QRP_INFO[k];
+      const vt = e.verdict === 'context' ? '<span class="vtag ctx">context-dependent</span>' : e.verdict === 'honest' ? '<span class="vtag ok">the honest path</span>' : '<span class="vtag bad">questionable practice</span>';
+      const card = el('div', { class: 'codex-card' + (k === focusFlaw ? ' focus' : '') });
+      card.innerHTML = `<div class="lesson-h">${e.term} ${vt}</div><div>${e.plain}</div>` +
+        `<div class="lesson-harm"><b>Harm:</b> ${e.harm}</div>` +
+        `<div><b>Antidote:</b> ${e.antidote}</div>` +
+        `<div class="lesson-cite">${e.realCase}<br><i>${e.citation}</i></div>`;
+      body.appendChild(card);
+    });
+    body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
+    modal('Methods Codex', body, { dismissable: true });
+  }
+
+  // ======================= CAREER DASHBOARD =======================
+  function replicationRate() {
+    let survived = 0, total = 0;
+    LEVELS.forEach((lv) => {
+      const p = App.progress[lv.id];
+      if (!p || !p.done) return;
+      total++;
+      if (p.honest || p.prereg || (p.suspicion || 0) <= 20) survived++;
+    });
+    return total ? Math.round((survived / total) * 100) : 0;
+  }
+  function showDashboard() {
+    const c = App.career;
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🎓 Career Dashboard' }));
+    const cleared = LEVELS.filter((l) => App.progress[l.id] && App.progress[l.id].done).length;
+    const stats = [
+      ['Publications', c.publications], ['Retractions', c.retractions], ['Honest nulls', c.honestNulls],
+      ['Clean wins', c.cleanWins], ['"Decisive" wins', c.p001Wins], ['Levels cleared', cleared + ' / ' + LEVELS.length],
+      ['Est. replication rate', replicationRate() + '%'],
+    ];
+    const grid = el('div', { class: 'dash-grid' });
+    stats.forEach(([k, v]) => grid.appendChild(el('div', { class: 'dash-stat' }, [el('div', { class: 'k', text: k }), el('div', { class: 'v', text: String(v) })])));
+    body.appendChild(grid);
+
+    body.appendChild(el('div', { class: 'lesson-h', style: 'margin-top:12px', text: 'Achievements' }));
+    const ach = el('div', { class: 'ach-list' });
+    K.ACHIEVEMENTS.forEach((a) => {
+      const got = App.achievements.indexOf(a.id) >= 0;
+      ach.appendChild(el('div', { class: 'ach-item' + (got ? ' got' : ''), html: `${got ? '🏅' : '🔒'} <b>${a.title}</b> — ${got ? a.desc : '???'}` }));
+    });
+    body.appendChild(ach);
+
+    const row = el('div', { class: 'btnrow' });
+    if (cleared > 0) row.appendChild(el('button', { class: 'btn', onclick: replicationEpilogue }, ['Run Replication Crisis']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.progress = {}; App.achievements = []; App.career = loadCareer(); save(); saveAch(); showDashboard(); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']));
+    body.appendChild(row);
+    modal('Career Dashboard', body, { dismissable: true });
+  }
+
+  // ======================= SANDBOX LAB =======================
+  function showSandbox() {
+    const p = { n: 20, d: 0.5, sd: 10, mode: 't', r: 0.707 };
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🧪 Sandbox Lab' }));
+    body.appendChild(el('div', { class: 'hint', html: 'No game, no stakes — build intuition. Drag the sliders and watch the evidence react. Try: shrink <i>n</i> and watch <i>p</i> lurch; switch to Bayes and widen the prior to watch BF sink.' }));
+    const fig = el('div', {});
+    const out = el('div', { style: 'font-family:Consolas,monospace;font-size:13px;margin:8px 0;min-height:40px' });
+    const controls = el('div', {});
+
+    function mkSlider(label, key, min, max, step, fmtv) {
+      const wrap = el('div', { style: 'display:flex;align-items:center;gap:8px;margin:4px 0' });
+      const lab = el('div', { style: 'width:170px;font-size:12px' });
+      const val = el('span');
+      const inp = el('input', { type: 'range', min: min, max: max, step: step, value: p[key], style: 'flex:1' });
+      const setLab = () => { val.textContent = fmtv ? fmtv(p[key]) : p[key]; lab.innerHTML = label + ': <b>' + val.textContent + '</b>'; };
+      inp.addEventListener('input', () => { p[key] = parseFloat(inp.value); setLab(); recompute(); });
+      setLab();
+      wrap.appendChild(lab); wrap.appendChild(inp);
+      return wrap;
+    }
+    function recompute() {
+      const rng = RNG(20260617);
+      const A = [], B = [];
+      for (let i = 0; i < p.n; i++) A.push(rng.normal(50, p.sd));
+      for (let i = 0; i < p.n; i++) B.push(rng.normal(50 + p.d * p.sd, p.sd));
+      const tt = Stats.tTestIndependent(B, A, false);
+      const d = Stats.cohenD(A, B);
+      const ci = Stats.meanDiffCI(A, B);
+      out.innerHTML = '';
+      if (p.mode === 't') {
+        const sig = tt.p < 0.05;
+        out.innerHTML = `t(${fmt(tt.df, 0)}) = ${fmt(tt.t, 2)},  <b style="color:${sig ? '#15803d' : '#b91c1c'}">p = ${pfmt(tt.p)}</b>` +
+          `   ·   d = ${fmt(d, 2)}, 95% CI [${fmt(ci.lo, 2)}, ${fmt(ci.hi, 2)}]`;
+      } else {
+        const bf = PSPSS_bayes ? PSPSS_bayes.bf10TwoSample(tt.t, p.n, p.n, p.r) : NaN;
+        out.innerHTML = `<b style="color:${bf > 3 ? '#15803d' : '#b91c1c'}">BF₁₀ = ${bf >= 100 ? bf.toFixed(0) : bf.toFixed(2)}</b> (prior r=${p.r})   ·   d = ${fmt(d, 2)}`;
+      }
+      fig.innerHTML = '';
+      try { fig.appendChild(PSPSS_charts.boxplotByGroup([{ label: 'A', values: A }, { label: 'B', values: B }], { title: 'Sandbox data', ylabel: 'outcome' })); } catch (e) {}
+    }
+
+    const modeRow = el('div', { class: 'btnrow', style: 'margin:6px 0' });
+    const tBtn = el('button', { class: 'btn', onclick: () => { p.mode = 't'; tBtn.className = 'btn'; bBtn.className = 'btn ghost'; rWrap.style.display = 'none'; recompute(); } }, ['Frequentist (p)']);
+    const bBtn = el('button', { class: 'btn ghost', onclick: () => { p.mode = 'b'; bBtn.className = 'btn'; tBtn.className = 'btn ghost'; rWrap.style.display = ''; recompute(); } }, ['Bayesian (BF)']);
+    modeRow.appendChild(tBtn); modeRow.appendChild(bBtn);
+    controls.appendChild(modeRow);
+    controls.appendChild(mkSlider('n per group', 'n', 4, 200, 1));
+    controls.appendChild(mkSlider('true effect (d)', 'd', 0, 1.5, 0.05, (v) => v.toFixed(2)));
+    controls.appendChild(mkSlider('SD', 'sd', 2, 30, 1));
+    const rWrap = mkSlider('prior width r', 'r', 0.1, 2, 0.05, (v) => v.toFixed(2));
+    rWrap.style.display = 'none';
+    controls.appendChild(rWrap);
+
+    body.appendChild(controls);
+    body.appendChild(out);
+    body.appendChild(fig);
+    body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
+    modal('Sandbox Lab', body, { dismissable: true });
+    recompute();
+  }
+
+  // ======================= SPOT-THE-QRP QUIZ =======================
+  function showQuiz() {
+    let idx = 0, score = 0;
+    function render() {
+      const item = K.QUIZ_ITEMS[idx];
+      const picks = new Set();
+      let trustPick = null;
+      const body = el('div');
+      body.appendChild(el('h2', { text: `🔍 Spot the QRP  (${idx + 1}/${K.QUIZ_ITEMS.length})` }));
+      body.appendChild(el('div', { class: 'quiz-scenario', text: item.scenario }));
+      body.appendChild(el('div', { class: 'hint', text: 'Tick every questionable practice you can spot:' }));
+      const opts = el('div', { class: 'quiz-opts' });
+      K.QUIZ_OPTIONS.forEach((qk) => {
+        const lab = el('label', { class: 'quiz-opt' });
+        const cb = el('input', { type: 'checkbox' });
+        cb.addEventListener('change', () => { cb.checked ? picks.add(qk) : picks.delete(qk); });
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + K.QRP_INFO[qk].term));
+        opts.appendChild(lab);
+      });
+      body.appendChild(opts);
+      const trustRow = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+      const ty = el('button', { class: 'btn ghost', onclick: () => { trustPick = true; ty.className = 'btn'; tn.className = 'btn ghost'; } }, ['Trust it ✅']);
+      const tn = el('button', { class: 'btn ghost', onclick: () => { trustPick = false; tn.className = 'btn'; ty.className = 'btn ghost'; } }, ["Don't trust ❌"]);
+      trustRow.appendChild(el('span', { class: 'hint', style: 'align-self:center;margin-right:6px', text: 'Verdict:' }));
+      trustRow.appendChild(ty); trustRow.appendChild(tn);
+      body.appendChild(trustRow);
+
+      const fb = el('div', {});
+      body.appendChild(fb);
+      const actions = el('div', { class: 'btnrow' });
+      const submit = el('button', { class: 'btn', onclick: () => {
+        const correctSet = new Set(item.qrps);
+        const hits = [...picks].filter((x) => correctSet.has(x)).length;
+        const wrong = [...picks].filter((x) => !correctSet.has(x)).length;
+        const found = hits === correctSet.size && wrong === 0;
+        const trustOK = trustPick === item.trust;
+        if (found && trustOK) score++;
+        fb.innerHTML = '';
+        fb.appendChild(el('div', { class: 'reveal ' + (found && trustOK ? 'good' : 'warn'),
+          html: (found && trustOK ? '✅ Correct.' : '❌ Not quite.') + ' ' + item.explain +
+            (correctSet.size ? '<br><b>QRPs present:</b> ' + item.qrps.map((k) => K.QRP_INFO[k].term).join(', ') : '<br>This one is trustworthy — no QRPs.') }));
+        submit.remove();
+        actions.appendChild(el('button', { class: 'btn', onclick: () => { idx++; if (idx < K.QUIZ_ITEMS.length) render(); else finish(); } }, [idx + 1 < K.QUIZ_ITEMS.length ? 'Next ▸' : 'See score']));
+      } }, ['Submit']);
+      actions.appendChild(submit);
+      actions.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Quit']));
+      body.appendChild(actions);
+      modal('Spot the QRP', body, { dismissable: true });
+    }
+    function finish() {
+      const body = el('div');
+      body.appendChild(el('h2', { text: '🔍 Quiz Complete' }));
+      body.appendChild(el('div', { html: `You correctly assessed <b>${score}/${K.QUIZ_ITEMS.length}</b> studies. ` + (score === K.QUIZ_ITEMS.length ? 'A natural-born Reviewer 2.' : 'The Methods Codex awaits.') }));
+      body.appendChild(el('div', { class: 'btnrow' }, [
+        el('button', { class: 'btn', onclick: showQuiz }, ['Again']),
+        el('button', { class: 'btn ghost', onclick: showCodex }, ['Open Codex']),
+        el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']),
+      ]));
+      modal('Spot the QRP', body, { dismissable: true });
+    }
+    render();
   }
 
   // ---- toast ----

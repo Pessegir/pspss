@@ -77,5 +77,21 @@ assert('raw effect not significant (covariate masks it)', S.tTestIndependent(g0,
 const olsRes = S.ols([7, 10, 13, 16, 19], [[0, 1, 2, 3, 4]]);
 approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.beta[1], 3, 1e-6);
 
+console.log('\nEffect size & confidence intervals:');
+// d: groups offset by exactly 1 pooled SD -> d = 1
+approx('cohenD ~ 1', S.cohenD([1, 2, 3, 4, 5], [1, 2, 3, 4, 5].map((x) => x + Math.sqrt(2.5))), 1, 1e-6);
+approx('cohenD sign (b>a positive)', Math.sign(S.cohenD([1, 2, 3], [10, 11, 12])), 1);
+// tCritical round-trips through the two-tailed p
+approx('tCritical(9,0.95) ~ 2.262', S.tCritical(9, 0.95), 2.262, 5e-3);
+approx('tCritical(inf,0.95) ~ 1.96', S.tCritical(1e7, 0.95), 1.96, 5e-3);
+approx('tCritical round-trips p', S.tDistTwoTailedP(S.tCritical(20, 0.95), 20), 0.05, 1e-4);
+// CI brackets the true difference (+5) on clean data
+const ci = S.meanDiffCI([1, 2, 3, 4, 5], [6, 7, 8, 9, 10]);
+approx('meanDiffCI diff', ci.diff, 5);
+assert('meanDiffCI brackets the difference', ci.lo < 5 && ci.hi > 5);
+// near-null data: CI should span zero
+const ciNull = S.meanDiffCI([4, 5, 6, 5, 4, 6], [5, 4, 6, 5, 6, 4]);
+assert('near-null CI spans zero', ciNull.lo < 0 && ciNull.hi > 0);
+
 console.log(`\n${passed} passed, ${failed} failed.`);
 process.exit(failed ? 1 : 0);
