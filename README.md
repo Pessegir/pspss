@@ -8,10 +8,11 @@ factors**). When you p-hack you perform the exact manipulations that inflate fal
 real literature — that's the joke, and the lesson.
 
 - **Campaign 1 — Publish or Perish:** classic data-torturing QRPs.
-- **Campaign 2 — The Methods Section:** abuse the *analysis itself*. Every level presents the full
-  analysis menu (wrong tests, pseudoreplication, mixed-model mis-specification, median splits,
-  collider control, Simpson's paradox, specification search) and only the analysis that matches the
-  flaw actually works — you have to diagnose it from the figures and pick correctly.
+- **Campaign 2 — The Methods Section:** abuse the *analysis itself*. From here on **every level
+  offers the entire QRP arsenal** (wrong tests, pseudoreplication, mixed-model mis-specification,
+  median splits, collider control, Simpson's paradox, specification search, outlier-dropping,
+  transforms…) — so it's a real riddle: diagnose the flaw from the figures and work out which
+  manipulation actually cracks it, instead of clicking the only available button.
 - **Campaign 3 — In Bayes We Trust:** no more p-values; the metric is the **Bayes factor**, abused
   via prior width, one-sided priors, optional stopping, and BF₀₁ relabelling.
 
@@ -64,6 +65,7 @@ phrase — **`trending toward significance`** (it also accepts `marginally signi
 | ![Bayesian level](screenshots/09-bayesian-level.png) **Campaign 3 (Bayesian)** — the metric becomes the Bayes factor; prior-hack it. | ![House rule](screenshots/10-house-rule.png) **House rule** — some finales demand p < .001. |
 | ![Publication](screenshots/11-publication-win.png) **Publication** — significance secured, in an absurd journal. | ![Replication crisis](screenshots/12-replication-crisis.png) **Replication crisis** — years later, your hacked findings evaporate. |
 | ![Reviewer 2 backdoor](screenshots/13-backdoor.png) **Reviewer 2 backdoor** — the unlock prompt for lecturers/playtesters. | ![Unlocked](screenshots/14-unlocked-map.png) **Unlocked** — all campaigns open, no faked progress. |
+| ![Full arsenal](screenshots/15-full-arsenal.png) **Full arsenal (Campaign 2+)** — from Campaign 2 every level offers the whole toolbox; you must work out which manipulation cracks it. | |
 
 ## Develop
 

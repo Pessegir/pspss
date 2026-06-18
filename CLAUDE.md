@@ -82,14 +82,17 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   pass `aArr`/`bArr` (group arrays) and `finalize` derives them. Difficulty is uniform — no
   tutorial/hints/easy-mode by design ("being a good researcher ≠ being good at p-hacking").
 - **Every level is a real puzzle.** `levels.verify.js` proves: raw is not a win; the intended QRP
-  wins at `par`; and for C2, among ALL options offered that round, *only* the intended analysis
-  wins (every other single move is a proven non-winning decoy). Re-run it after any level/engine
-  change; retune seeds with the matching `tune-seeds*.js` if a generator changes.
-- **Campaign 2 shows the full analysis menu.** A loop at the end of `levels.c2.js` sets every C2
-  level's `allowedTools` to the full `C2_MENU` and adds gating flags (`lmm`, `moderator`,
-  `aggregable`) so the flag-based tools always appear. Each level's `evaluate` honours only its own
-  flag, so non-matching tools are inert / give the honest non-significant answer — they cannot
-  accidentally win. Do NOT re-add per-level `allowedTools` whitelists (that made levels trivial).
+  wins at `par`; from C2 on every offered tool applies without error and the intended option is among
+  the winners (a c2 trap has none). Re-run after any level/engine change; retune with `tune-seeds*.js`.
+- **Campaigns 2 & 3 expose the FULL arsenal** (the fix for "levels were just clicking"). Loops at the
+  end of `levels.c2.js`/`levels.c3.js` set every level's `allowedTools = ALL_QRP` (all interventions)
+  and add generic decoy data (`lmm`, `moderator`, `aggregable`, `tests`, `candidateControls`,
+  `specs`) so the flag-based tools all appear. Each level's `evaluate` honours only its own flag, so
+  most tools are inert — but the player must still *find* the one(s) that work. Data-mutators
+  (refine/winsorize/log) genuinely mutate the data, so a few levels have realistic alternate p-hacks;
+  that's allowed (verify only requires the intended to win, not uniqueness). Do NOT shrink menus back
+  to per-level whitelists. (C1 stays curated as a gentle intro.) Menus show only *enabled* tools
+  (`ui.js items()`), no greyed clutter.
 - **Win metric is paradigm-agnostic.** `analyze()` returns `metricKind` (`'p'`|`'bf'`),
   `metricLabel`, `metricValue`, `goalText`, `significant`, `win`. UI reads those — never hardcode
   "p-value". `win` = metric crosses `level.winThreshold` (default .05 / BF 3) AND direction matches

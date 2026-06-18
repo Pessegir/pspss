@@ -116,7 +116,23 @@
   // genuinely null (a "win" there is spin / a false positive); the rest have a real
   // (if small) effect that prior-hacking merely overstates.
   const FALSE_POSITIVE = { 'bf01-flip': 1, 'default-prior-trap': 1 };
-  LEVELS.forEach((l) => { l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' }; });
+  // Full arsenal here too: the frequentist tools appear but are inert (bayesEval
+  // ignores them); the Bayesian tools are the real levers. Generic decoy data lets
+  // the flag-based tools show up.
+  const ALL_QRP = ['set-prior', 'one-sided-prior', 'collect-more-bayes', 'report-bf01', 'prior-robustness', 'choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
+  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
+  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
+  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
+  LEVELS.forEach((l) => {
+    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
+    if (l.lmm === undefined) l.lmm = true;
+    if (l.moderator === undefined) l.moderator = 'mod';
+    if (l.aggregable === undefined) l.aggregable = true;
+    if (l.tests === undefined) l.tests = GENERIC_TESTS;
+    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
+    if (l.specs === undefined) l.specs = GENERIC_SPECS;
+    l.allowedTools = ALL_QRP;
+  });
 
   const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
   LEVELS.forEach((l) => levelsApi.LEVELS.push(l));

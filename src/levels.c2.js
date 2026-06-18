@@ -358,16 +358,24 @@
   // field-gated tools (choose-test / add-control / spec-multiverse / pick-outcome)
   // appear only where their data exists. Each level's evaluate() honours just its
   // own flag, so non-matching tools cannot accidentally win (proved by levels.verify).
-  const C2_MENU = ['choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'robustness-check'];
-  // Ground-truth for the debrief reveal (see levels.js). These levels manufacture
-  // a FALSE POSITIVE from genuine null structure; the rest have a real effect
-  // obtained by an invalid analysis.
+  // From Campaign 2 on, EVERY level offers the full arsenal — it's a riddle, not a
+  // click. The intended analysis is the clean (low-suspicion, par) solution; most
+  // other moves do nothing here, and a few are alternate p-hacks (as in real life).
+  // Generic decoy data is added so the flag-based tools all appear; each level's
+  // evaluate() honours only its own flag, so they're inert unless intended.
+  const ALL_QRP = ['choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform', 'set-prior', 'one-sided-prior', 'collect-more-bayes', 'report-bf01', 'prior-robustness'];
+  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
+  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
+  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
   const FALSE_POSITIVE = { 'two-kinds': 1, collider: 1, simpson: 1, 'spec-curve': 1, 'honest-lmm': 1 };
   LEVELS.forEach((l) => {
     if (l.lmm === undefined) l.lmm = true;
     if (l.moderator === undefined) l.moderator = 'mod';
     if (l.aggregable === undefined) l.aggregable = true;
-    l.allowedTools = C2_MENU;
+    if (l.tests === undefined) l.tests = GENERIC_TESTS;
+    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
+    if (l.specs === undefined) l.specs = GENERIC_SPECS;
+    l.allowedTools = ALL_QRP;
     l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
   });
 
