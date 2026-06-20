@@ -102,6 +102,7 @@
     const tools = el('div', { class: 'btnrow', style: 'margin-top:8px' }, [
       el('button', { class: 'btn ghost', onclick: showCodex }, ['📖 Methods Codex']),
       el('button', { class: 'btn ghost', onclick: showSandbox }, ['🧪 Sandbox Lab']),
+      el('button', { class: 'btn ghost', onclick: showMetaLab }, ['🔬 Meta-Science Lab']),
       el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
       el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
     ]);
@@ -981,6 +982,96 @@
     body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
     modal('Sandbox Lab', body, { dismissable: true });
     recompute();
+  }
+
+  // ======================= META-SCIENCE LAB =======================
+  // The reviewer's view: detect p-hacking & publication bias, and plan studies.
+  function metaSlider(p, key, label, min, max, step, fmtv, on) {
+    const wrap = el('div', { style: 'display:flex;align-items:center;gap:8px;margin:4px 0' });
+    const lab = el('div', { style: 'width:190px;font-size:12px' });
+    const inp = el('input', { type: 'range', min: min, max: max, step: step, value: p[key], style: 'flex:1' });
+    const setLab = () => { lab.innerHTML = label + ': <b>' + (fmtv ? fmtv(p[key]) : p[key]) + '</b>'; };
+    inp.addEventListener('input', () => { p[key] = parseFloat(inp.value); setLab(); on(); });
+    setLab(); wrap.appendChild(lab); wrap.appendChild(inp);
+    return wrap;
+  }
+  function showMetaLab() {
+    let tab = 'pcurve';
+    const body = el('div');
+    body.appendChild(el('h2', { text: '🔬 Meta-Science Lab' }));
+    body.appendChild(el('div', { class: 'hint', text: 'Flip from perpetrator to reviewer. Detect p-hacking and publication bias in a simulated literature — and plan an honest study.' }));
+    const tabs = el('div', { class: 'btnrow', style: 'margin:6px 0' });
+    const content = el('div');
+    const TABS = [['pcurve', 'p-curve'], ['funnel', 'Funnel / bias'], ['power', 'Power'], ['tost', 'Equivalence']];
+    function render() {
+      tabs.innerHTML = '';
+      TABS.forEach(([id, name]) => tabs.appendChild(el('button', { class: 'btn' + (id === tab ? '' : ' ghost'), onclick: () => { tab = id; render(); } }, [name])));
+      content.innerHTML = '';
+      const fig = el('div'); const out = el('div', { style: 'font-family:Consolas,monospace;font-size:13px;margin:6px 0;min-height:34px' });
+      if (tab === 'pcurve') {
+        const p = { d: 0.0, hack: 0 };
+        const go = () => {
+          const rng = RNG(7); const ps = [];
+          for (let k = 0; k < 600; k++) {
+            if (rng.next() < p.hack / 100) { ps.push(0.05 * Math.pow(rng.next(), 0.25)); } // p-hacked: piled near .05
+            else { const A = [], B = []; for (let i = 0; i < 20; i++) { A.push(rng.normal(0, 1)); B.push(rng.normal(p.d, 1)); } const pv = Stats.tTestIndependent(A, B, false).p; if (pv < 0.05) ps.push(pv); }
+          }
+          out.innerHTML = `${ps.length} "significant" studies. <b>Right-skew → real effect; flat → null; left-skew (piled near .05) → p-hacked.</b>`;
+          fig.innerHTML = ''; try { fig.appendChild(PSPSS_charts.pcurve(ps, {})); } catch (e) {}
+        };
+        content.appendChild(metaSlider(p, 'd', 'true effect (d)', 0, 1, 0.05, (v) => v.toFixed(2), go));
+        content.appendChild(metaSlider(p, 'hack', '% of studies p-hacked', 0, 100, 5, null, go));
+        content.appendChild(out); content.appendChild(fig); go();
+      } else if (tab === 'funnel') {
+        const p = { d: 0.3, bias: 0 };
+        const go = () => {
+          const rng = RNG(11); const pts = [];
+          for (let k = 0; k < 120; k++) {
+            const n = 8 + Math.floor(rng.next() * 120); const se = 1 / Math.sqrt(n / 2);
+            const est = rng.normal(p.d, se);
+            const sig = Math.abs(est / se) > 1.96;
+            if (!sig && rng.next() < p.bias / 100) continue; // file-drawer the null small studies
+            pts.push({ effect: est, se: se });
+          }
+          out.innerHTML = `${pts.length} published studies. <b>A symmetric funnel is healthy; a missing bottom-corner = publication bias.</b>`;
+          fig.innerHTML = ''; try { fig.appendChild(PSPSS_charts.funnel(pts, { center: p.d })); } catch (e) {}
+        };
+        content.appendChild(metaSlider(p, 'd', 'true effect (d)', 0, 1, 0.05, (v) => v.toFixed(2), go));
+        content.appendChild(metaSlider(p, 'bias', 'publication bias', 0, 100, 5, null, go));
+        content.appendChild(out); content.appendChild(fig); go();
+      } else if (tab === 'power') {
+        const p = { d: 0.5, alpha: 0.05, power: 0.8 };
+        const go = () => {
+          const N = Stats.requiredN(p.d, p.alpha, p.power);
+          const za = Stats.probit(1 - p.alpha / 2);
+          const xs = [], ys = [];
+          for (let n = 5; n <= Math.max(120, N + 20); n += 5) { xs.push(n); ys.push(100 * Stats.normalCDF(p.d * Math.sqrt(n / 2) - za)); }
+          out.innerHTML = `For d=${p.d.toFixed(2)}, α=${p.alpha}, power=${(p.power * 100).toFixed(0)}% you need <b>N ≈ ${N} per group</b>.`;
+          fig.innerHTML = ''; try { fig.appendChild(PSPSS_charts.line(xs, ys, { title: 'Power vs N (per group)', xlabel: 'N per group', ylabel: 'power (%)', rule: p.power * 100 })); } catch (e) {}
+        };
+        content.appendChild(metaSlider(p, 'd', 'effect (d)', 0.1, 1.2, 0.05, (v) => v.toFixed(2), go));
+        content.appendChild(metaSlider(p, 'alpha', 'α', 0.001, 0.1, 0.001, (v) => v.toFixed(3), go));
+        content.appendChild(metaSlider(p, 'power', 'target power', 0.5, 0.99, 0.01, (v) => v.toFixed(2), go));
+        content.appendChild(out); content.appendChild(fig); go();
+      } else if (tab === 'tost') {
+        const p = { d: 0.0, n: 50, bound: 0.4 };
+        const go = () => {
+          const rng = RNG(13); const A = [], B = [];
+          for (let i = 0; i < p.n; i++) { A.push(rng.normal(0, 1)); B.push(rng.normal(p.d, 1)); }
+          const r = Stats.tost(A, B, p.bound);
+          out.innerHTML = `Observed d≈${p.d.toFixed(2)}, n=${p.n}/group, bound ±${p.bound.toFixed(2)} SD → <b style="color:${r.equivalent ? '#15803d' : '#b91c1c'}">${r.equivalent ? 'EQUIVALENT (can claim "no meaningful effect")' : 'NOT equivalent (inconclusive)'}</b>`;
+          fig.innerHTML = ''; try { fig.appendChild(PSPSS_charts.boxplotByGroup([{ label: 'A', values: A }, { label: 'B', values: B }], { title: 'Equivalence (TOST)', ylabel: 'value' })); } catch (e) {}
+        };
+        content.appendChild(metaSlider(p, 'd', 'true effect (d)', 0, 1, 0.05, (v) => v.toFixed(2), go));
+        content.appendChild(metaSlider(p, 'n', 'n per group', 10, 300, 5, null, go));
+        content.appendChild(metaSlider(p, 'bound', 'equivalence bound (SD)', 0.1, 1, 0.05, (v) => v.toFixed(2), go));
+        content.appendChild(out); content.appendChild(fig); go();
+      }
+    }
+    body.appendChild(tabs); body.appendChild(content);
+    body.appendChild(el('div', { class: 'btnrow' }, [el('button', { class: 'btn', onclick: closeModal }, ['Close'])]));
+    modal('Meta-Science Lab', body, { dismissable: true });
+    render();
   }
 
   // ======================= SPOT-THE-QRP QUIZ =======================

@@ -173,7 +173,53 @@
     return g;
   }
 
-  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line };
+  // ---- p-curve: distribution of significant p-values over (0, .05) -----------
+  // Right-skew (most mass near 0) = evidential; flat = null; left-skew = p-hacked.
+  function pcurve(pvals, opts) {
+    opts = opts || {};
+    const edges = [0, 0.01, 0.02, 0.03, 0.04, 0.05];
+    const counts = new Array(5).fill(0);
+    let n = 0;
+    pvals.forEach((p) => { if (p < 0.05) { n++; let b = Math.min(4, Math.floor(p / 0.01)); counts[b]++; } });
+    const pct = counts.map((c) => (n ? (100 * c) / n : 0));
+    const g = frame(opts.title || 'p-curve (significant studies)', 'p-value', '% of significant results');
+    const ymax = Math.max(20, Math.max.apply(null, pct));
+    ticksY(g, 0, ymax);
+    // flat (null) reference at 20%
+    const yref = py(20, 0, ymax);
+    g.appendChild(s('line', { x1: M.l, y1: yref, x2: W - M.r, y2: yref, stroke: '#b45309', 'stroke-dasharray': '4 3' }));
+    g.appendChild(txt(W - M.r - 2, yref - 3, 'flat = null', { 'text-anchor': 'end', fill: '#b45309', 'font-size': 10 }));
+    const band = (W - M.l - M.r) / 5;
+    for (let b = 0; b < 5; b++) {
+      const x0 = M.l + band * b, y = py(pct[b], 0, ymax);
+      g.appendChild(s('rect', { x: x0 + 4, y, width: band - 8, height: (H - M.b) - y, fill: PAL[0], opacity: 0.85 }));
+      g.appendChild(txt(x0 + band / 2, H - M.b + 13, edges[b].toFixed(2) + '–' + edges[b + 1].toFixed(2), { 'text-anchor': 'middle', fill: '#6b6450', 'font-size': 8 }));
+    }
+    return g;
+  }
+
+  // ---- funnel plot: effect estimate vs standard error (publication bias) ------
+  function funnel(points, opts) {
+    opts = opts || {};
+    const eff = points.map((p) => p.effect);
+    let [xlo, xhi] = nice(Math.min.apply(null, eff), Math.max.apply(null, eff));
+    const seMax = Math.max.apply(null, points.map((p) => p.se));
+    const g = frame(opts.title || 'Funnel plot', opts.xlabel || 'effect estimate', 'standard error');
+    // y axis inverted: SE=0 (most precise) at top
+    const ftop = M.t, fbot = H - M.b;
+    const pyse = (se) => ftop + (se / (seMax || 1)) * (fbot - ftop);
+    for (let k = 0; k <= 4; k++) { const se = (k / 4) * seMax; g.appendChild(txt(M.l - 6, pyse(se) + 3, se.toFixed(1), { 'text-anchor': 'end', fill: '#6b6450', 'font-size': 10 })); }
+    const center = opts.center != null ? opts.center : eff.reduce((a, b) => a + b, 0) / eff.length;
+    // 95% funnel guides: effect = center ± 1.96*se
+    const gx = (e) => px(e, xlo, xhi);
+    g.appendChild(s('line', { x1: gx(center), y1: pyse(0), x2: gx(center - 1.96 * seMax), y2: pyse(seMax), stroke: '#94a3b8', 'stroke-dasharray': '3 3' }));
+    g.appendChild(s('line', { x1: gx(center), y1: pyse(0), x2: gx(center + 1.96 * seMax), y2: pyse(seMax), stroke: '#94a3b8', 'stroke-dasharray': '3 3' }));
+    g.appendChild(s('line', { x1: gx(0), y1: ftop, x2: gx(0), y2: fbot, stroke: '#ddd' }));
+    points.forEach((p) => g.appendChild(s('circle', { cx: gx(p.effect), cy: pyse(p.se), r: 3, fill: PAL[0], opacity: 0.6 })));
+    return g;
+  }
+
+  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line, pcurve, funnel };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PSPSS_charts = api;
 })(typeof self !== 'undefined' ? self : this);
