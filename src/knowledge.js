@@ -232,6 +232,61 @@
       antidote: 'Report the ambiguity; collect a preregistered, adequately-powered sample.',
       verdict: 'honest',
     },
+    // ---- Campaign 4: the antidotes (verdict 'honest') ----
+    preregistration: {
+      term: 'Preregistration',
+      plain: 'Committing your hypothesis and analysis plan publicly, with a timestamp, before seeing the data.',
+      harm: 'None — it is the antidote. It converts flexible "exploratory" choices into a fixed, accountable plan, controlling the error rate.',
+      citation: 'Nosek et al. (2018); Chambers, Registered Reports.',
+      realCase: 'Registered Reports are accepted on the basis of the design, before results exist.',
+      antidote: 'You are doing it. Distinguish confirmatory (preregistered) from exploratory analyses.',
+      verdict: 'honest',
+    },
+    power: {
+      term: 'A-priori power analysis',
+      plain: 'Working out the sample size needed to detect the smallest effect of interest, before collecting.',
+      harm: 'None — it is the antidote to under-powered studies and to optional stopping.',
+      citation: 'Cohen (1988); Button et al. (2013), "Power failure".',
+      realCase: 'Chronically under-powered fields produce inflated, unreplicable effects (the winner\'s curse).',
+      antidote: 'Plan N in advance for a defensible effect size; collect once.',
+      verdict: 'honest',
+    },
+    multiplicity: {
+      term: 'Multiple-comparison correction',
+      plain: 'Adjusting p-values for the number of tests you ran (Bonferroni / Benjamini-Hochberg FDR).',
+      harm: 'None — it keeps the family-wise / false-discovery rate honest when you test many things.',
+      citation: 'Benjamini & Hochberg (1995).',
+      realCase: 'Twenty tests at α=.05 yield ~one "significant" result by chance alone.',
+      antidote: 'Pre-specify the primary test; correct the rest; report all of them.',
+      verdict: 'honest',
+    },
+    equivalence: {
+      term: 'Equivalence testing (TOST)',
+      plain: 'Two one-sided tests that can actively support "no meaningful effect" within a pre-set bound.',
+      harm: 'None — it lets you conclude absence properly, instead of misreading a non-significant test.',
+      citation: 'Lakens (2017), "Equivalence tests".',
+      realCase: 'Absence of evidence is not evidence of absence — unless you test for it.',
+      antidote: 'Set a smallest-effect-of-interest bound a priori; run TOST.',
+      verdict: 'honest',
+    },
+    'multiverse-honest': {
+      term: 'Transparent multiverse / specification curve',
+      plain: 'Running all defensible specifications and reporting the whole distribution of results.',
+      harm: 'None — it shows how robust (or fragile) a finding is across reasonable analytic choices.',
+      citation: 'Steegen et al. (2016); Simonsohn, Simmons & Nelson, specification curve.',
+      realCase: 'A claim that survives only one of many specifications is not robust.',
+      antidote: 'You are doing it. Report the curve, not the corner.',
+      verdict: 'honest',
+    },
+    replication: {
+      term: 'Direct replication',
+      plain: 'Re-running a study, preregistered and adequately powered, to see if the effect holds.',
+      harm: 'None — replication is how science self-corrects, even when a beloved effect dies.',
+      citation: 'Open Science Collaboration (2015) — ~36% of psychology effects replicated.',
+      realCase: 'Many famous effects (ego depletion, power posing) shrank or vanished on replication.',
+      antidote: 'Preregister, power for the original effect, report whatever you find.',
+      verdict: 'honest',
+    },
   };
 
   // Short "what you did" label per tool id, for the debrief's action list.
@@ -257,6 +312,13 @@
     'collect-more-bayes': 'collected more data until the BF rose',
     'report-bf01': 'reported BF₀₁ as if it supported you',
     'prior-robustness': 'kept the most flattering prior',
+    // Campaign 4 — honest methods
+    preregister: 'preregistered the analysis plan',
+    'power-analysis': 'ran an a-priori power analysis',
+    'collect-to-power': 'collected the pre-planned sample in one go',
+    'correct-comparisons': 'corrected for multiple comparisons',
+    'equivalence-test': 'ran an equivalence test (TOST)',
+    'report-multiverse': 'reported the full specification curve',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
@@ -341,6 +403,11 @@
     { id: 'prior-whisperer', title: 'Prior Whisperer', desc: 'Clear a Bayesian level by tuning the prior.', check: (c) => c.event === 'win' && /prior/.test(c.level.flaw) },
     { id: 'decisive', title: 'Decisive (Allegedly)', desc: 'Clear a "house rule" level (p < .001 or BF > 10).', check: (c) => c.event === 'win' && c.career.p001Wins >= 1 },
     { id: 'prolific', title: 'Prolific', desc: 'Reach 10 publications.', check: (c) => c.career.publications >= 10 },
+    // Campaign 4 — the redemption arc
+    { id: 'preregistered', title: 'Preregistered!', desc: 'Win an Open Science level the honest way.', check: (c) => c.event === 'win' && c.level.objective === 'honest' },
+    { id: 'powered', title: 'Adequately Powered', desc: 'Clear the power-analysis level.', check: (c) => c.event === 'win' && c.level.flaw === 'power' },
+    { id: 'support-null', title: 'Evidence of Absence', desc: 'Defend a null with an equivalence test.', check: (c) => c.event === 'win' && c.level.flaw === 'equivalence' },
+    { id: 'replicator', title: 'The Replicator', desc: 'Complete the preregistered replication.', check: (c) => c.event === 'win' && c.level.flaw === 'replication' },
   ];
 
   function evaluateAchievements(ctx, already) {

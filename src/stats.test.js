@@ -93,5 +93,24 @@ assert('meanDiffCI brackets the difference', ci.lo < 5 && ci.hi > 5);
 const ciNull = S.meanDiffCI([4, 5, 6, 5, 4, 6], [5, 4, 6, 5, 6, 4]);
 assert('near-null CI spans zero', ciNull.lo < 0 && ciNull.hi > 0);
 
+console.log('\nOpen-science antidotes:');
+// probit round-trips the normal CDF
+approx('probit(0.975) ~ 1.96', S.probit(0.975), 1.96, 2e-3);
+approx('probit round-trips normalCDF', S.normalCDF(S.probit(0.83)), 0.83, 1e-3);
+// required N per group (Cohen): d=0.5, alpha=.05, power=.8 -> ~63-64/group
+approx('requiredN d=0.5 ~ 63', S.requiredN(0.5, 0.05, 0.8), 63, 2);
+assert('requiredN grows as d shrinks', S.requiredN(0.2, 0.05, 0.8) > S.requiredN(0.8, 0.05, 0.8));
+// Bonferroni & BH
+const adjB = S.adjustP([0.01, 0.02, 0.04], 'bonferroni');
+approx('bonferroni 0.01*3', adjB[0], 0.03, 1e-9);
+assert('bonferroni caps at 1', S.adjustP([0.5, 0.6], 'bonferroni').every((p) => p <= 1));
+const bh = S.adjustP([0.001, 0.01, 0.02, 0.5], 'bh');
+assert('BH is monotone & <= 1', bh.every((p) => p <= 1) && bh[3] >= bh[0]);
+assert('BH less conservative than Bonferroni', S.adjustP([0.01, 0.02, 0.03], 'bh')[0] <= S.adjustP([0.01, 0.02, 0.03], 'bonferroni')[0]);
+// TOST: tight null around 0 is equivalent within a generous bound; a real effect is not
+const tightA = [9, 10, 11, 10, 9, 11, 10, 10, 9, 11], tightB = [10, 11, 9, 10, 10, 11, 9, 10, 11, 10];
+assert('TOST: tight null is equivalent (bound 3)', S.tost(tightA, tightB, 3).equivalent);
+assert('TOST: real 5-unit effect is NOT equivalent (bound 2)', !S.tost([1, 2, 3, 4, 5], [6, 7, 8, 9, 10], 2).equivalent);
+
 console.log(`\n${passed} passed, ${failed} failed.`);
 process.exit(failed ? 1 : 0);

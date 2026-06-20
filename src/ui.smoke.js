@@ -53,7 +53,7 @@ const store = {};
 global.window = global; global.document = document;
 global.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
 
-const ALL = ['outlier', 'skew', 'confound', 'optional-stopping', 'subgroup', 'multiverse', 'wrong-direction', 'honest-null', 'pseudoreplication', 'wrong-test', 'random-slopes', 'two-kinds', 'collider', 'simpson', 'spec-curve', 'outcome-switch', 'honest-lmm'];
+const ALL = ['outlier', 'skew', 'confound', 'optional-stopping', 'subgroup', 'multiverse', 'wrong-direction', 'honest-null', 'pseudoreplication', 'wrong-test', 'random-slopes', 'two-kinds', 'collider', 'simpson', 'spec-curve', 'outcome-switch', 'honest-lmm', 'pick-a-prior', 'watch-bf-climb', 'directional-now', 'bf01-flip', 'robustness-buffet', 'sequential-strong', 'full-prior-hack', 'default-prior-trap'];
 store['pspss_progress'] = JSON.stringify(ALL.reduce((o, id) => ((o[id] = { done: true, stars: 3 }), o), {}));
 
 global.Stats = require('./stats');
@@ -64,6 +64,7 @@ global.RNG = global.PSPSS_rng.RNG;
 global.PSPSS_levels = require('./levels');
 require('./levels.c2');
 require('./levels.c3');
+require('./levels.c4');
 global.PSPSS_campaigns = require('./campaigns');
 global.PSPSS_engine = require('./engine');
 global.PSPSS_charts = require('./charts');
@@ -136,6 +137,22 @@ check('prior chooser shown', modalText().includes('Ultranarrow'));
 clickBtn('Ultranarrow');
 check('prior-hacked past BF threshold', pIsSig());
 clickBtn('Skip to Map');
+
+console.log('\nC4 — Open Science: win by the HONEST method (Sign Here First / preregister):');
+check('campaign 4 listed', appNode.textContent.includes('Campaign 4 — Open Science'));
+card('Sign Here First').fire('click');
+check('C4 briefing shown', modalText().includes('Sign Here First'));
+clickBtn('Begin Analysis');
+check('strip goal is a defensible conclusion', document.querySelector('#stat-p').textContent.includes('defensible'));
+check('not yet a defensible win', !pIsSig());
+// a QRP does NOT win an Open Science level (it raises suspicion)
+clickItem('Winsorize'); check('QRP does not win a C4 level', !pIsSig());
+clickItem('New Study'); clickBtn('Begin Analysis'); // reset the level (suspicion back to 0)
+clickItem('Preregister'); check('preregistering WINS the honest way', pIsSig());
+check('C4 win screen praises the honest path', modalText().includes('Defensible') || modalText().includes('Credibly'));
+clickBtn('What really happened');
+check('C4 debrief shows a positive (good) reveal', modalText().includes('Debrief') && q('.reveal.good').length > 0);
+clickBtn('Campaign Map');
 
 console.log('\nNew learning/engagement screens:');
 clickBtn('Methods Codex');

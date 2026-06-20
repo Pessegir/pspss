@@ -109,6 +109,13 @@
       tip: 'A "robustness analysis" across priors — keep the biggest BF.',
       cite: 'A robustness check reports the RANGE honestly; cherry-picking its maximum defeats the point.',
     },
+    // ---- Campaign 4 — the honest methods (the win condition here) ----
+    preregister: { tip: 'Commit the plan before you see the data. The honest constraint.', cite: 'Nosek et al. (2018); Registered Reports (Chambers).' },
+    'power-analysis': { tip: 'Compute the N you need BEFORE collecting.', cite: 'Cohen (1988); Button et al. (2013).' },
+    'collect-to-power': { tip: 'Collect the pre-planned sample once — no peeking.', cite: 'The antidote to optional stopping.' },
+    'correct-comparisons': { tip: 'Adjust p-values for the family of tests you ran.', cite: 'Benjamini & Hochberg (1995).' },
+    'equivalence-test': { tip: 'Actively show "no meaningful effect" (TOST).', cite: 'Lakens (2017).' },
+    'report-multiverse': { tip: 'Report the whole specification curve, not the best corner.', cite: 'Steegen et al. (2016).' },
   };
 
   const PURE_TIPS = {
@@ -128,6 +135,12 @@
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',
     'spec-multiverse': 'Try everything. Keep the win. ♾️',
+    preregister: 'Pinky-promise, notarized. ✍️',
+    'power-analysis': 'Do the math first. 🔢',
+    'collect-to-power': 'Collect once, no peeking. 📦',
+    'correct-comparisons': 'Tax every test. 🧾',
+    'equivalence-test': 'Prove the nothing. 🟰',
+    'report-multiverse': 'Show the whole garden. 🌳',
     'set-prior': 'Pick the prior that vibes. 🔮',
     'one-sided-prior': 'You called it. (You didn’t.) ➡️',
     'collect-more-bayes': 'Feed the Bayes factor. 📈',

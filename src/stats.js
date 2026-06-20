@@ -410,6 +410,67 @@
     return { diff, lo: diff - tc * se, hi: diff + tc * se, se, df };
   }
 
+  // ---- "open science" antidotes (real) ------------------------------------
+
+  // Inverse standard-normal CDF (probit), Acklam's rational approximation.
+  function probit(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+    const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+    const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+    const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+    const pl = 0.02425;
+    let q, r;
+    if (p < pl) { q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    if (p <= 1 - pl) { q = p - 0.5; r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1); }
+    q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+
+  // A-priori sample size PER GROUP for a two-sample t-test (normal approximation).
+  function requiredN(d, alpha, power) {
+    alpha = alpha == null ? 0.05 : alpha;
+    power = power == null ? 0.8 : power;
+    const za = probit(1 - alpha / 2);
+    const zb = probit(power);
+    return Math.ceil(2 * Math.pow((za + zb) / Math.abs(d), 2));
+  }
+
+  // Multiple-comparison adjustment. method: 'bonferroni' | 'bh' (Benjamini-Hochberg FDR).
+  function adjustP(pvals, method) {
+    const m = pvals.length;
+    if (method === 'bonferroni') return pvals.map((p) => Math.min(1, p * m));
+    // Benjamini-Hochberg
+    const order = pvals.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+    const adj = new Array(m);
+    let prev = 1;
+    for (let k = m - 1; k >= 0; k--) {
+      const val = Math.min(prev, (order[k].p * m) / (k + 1));
+      adj[order[k].i] = val;
+      prev = val;
+    }
+    return adj;
+  }
+
+  // Two One-Sided Tests for equivalence to ±bound (raw units of the mean diff).
+  // Equivalent if BOTH one-sided tests reject at alpha (⇔ the (1-2α) CI ⊂ [-bound, bound]).
+  function tost(a, b, bound, alpha) {
+    alpha = alpha == null ? 0.05 : alpha;
+    const na = a.length, nb = b.length;
+    const diff = mean(b) - mean(a);
+    const se = Math.sqrt(variance(a) / na + variance(b) / nb);
+    const df = Math.pow(variance(a) / na + variance(b) / nb, 2) /
+      (Math.pow(variance(a) / na, 2) / (na - 1) + Math.pow(variance(b) / nb, 2) / (nb - 1));
+    // one-sided p that the statistic lies in the rejecting tail (dir = +1 upper, -1 lower)
+    const oneSided = (t, dir) => { const half = tDistTwoTailedP(Math.abs(t), df) / 2; return dir * t > 0 ? half : 1 - half; };
+    const tUpper = (diff + bound) / se; // H0: diff <= -bound  -> reject if t large positive
+    const tLower = (diff - bound) / se; // H0: diff >= +bound  -> reject if t large negative
+    const p1 = oneSided(tUpper, +1); // evidence diff > -bound
+    const p2 = oneSided(tLower, -1); // evidence diff < +bound
+    const equivalent = p1 < alpha && p2 < alpha;
+    return { diff, bound, p1, p2, equivalent, df };
+  }
+
   const Stats = {
     // special functions / cdfs (exported for testing)
     logGamma,
@@ -436,6 +497,11 @@
     cohenD,
     tCritical,
     meanDiffCI,
+    // open-science antidotes
+    probit,
+    requiredN,
+    adjustP,
+    tost,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

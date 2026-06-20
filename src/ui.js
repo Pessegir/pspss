@@ -315,7 +315,7 @@
       .map(({ t }) => ({
         label: t.label,
         tip: C.tooltip(t.id, App.mode),
-        cost: t.kind === 'diagnostic' ? 'free' : '+1 move · +' + (t.suspicion || 0) + '%',
+        cost: t.kind === 'diagnostic' ? 'free' : '+1 move' + (t.suspicion ? ' · +' + t.suspicion + '%' : ''),
         danger: t.danger,
         disabled: false,
         run: () => onTool(t.id),
@@ -330,6 +330,7 @@
     if (tool.needsChoice === 'lmm') return chooseFromList('Specify Random-Effects Structure', [{ id: 'max', label: 'Maximal (random intercept + slope)' }, { id: 'ri', label: 'Random intercept only' }], (o) => doTool('fit-lmm', { structure: o.id }));
     if (tool.needsChoice === 'control') return chooseFromList('Add a Covariate', App.state.level.candidateControls.concat([{ id: null, label: 'None (remove covariate)' }]), (o) => doTool('add-control', { var: o.id }));
     if (tool.needsChoice === 'prior') return chooseFromList('Set Cauchy Prior Width (r)', PRIOR_OPTS, (o) => doTool('set-prior', { r: o.r }));
+    if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }
@@ -515,7 +516,7 @@
       block.appendChild(el('div', { class: 'out-note out-effect', html: `Effect size: Cohen's <i>d</i> = <b>${fmt(a.effect, 2)}</b>${ciTxt}` + (spansZero ? ' <span class="out-flag">— CI spans zero</span>' : '') }));
     }
 
-    if (a.significant && !a.win) {
+    if (a.significant && !a.win && App.state.level.objective !== 'honest') {
       block.appendChild(el('div', { class: 'out-flag', text: '⚠ Crossed the threshold — but in the WRONG direction. Your hypothesis predicted the other way.' }));
     }
     if (logEntry && logEntry.danger) {
@@ -660,7 +661,13 @@
     const body = el('div');
     let stars = E.stars(st);
 
-    if (event === 'win') {
+    if (event === 'win' && lv.objective === 'honest') {
+      // Campaign 4: you reached a defensible conclusion the right way.
+      body.appendChild(el('h2', { class: 'win', text: '🪪 Defensible Conclusion — Credibly Published' }));
+      body.appendChild(el('div', { html: `Your finding is one a reviewer can <i>trust</i> and a replicator can <i>reproduce</i> — reached in <b>${st.moves}</b> move(s) with <b>0%</b> suspicion. No torture required.<br><br>This is what good science feels like: less glamorous, far more durable.` }));
+      body.appendChild(starRow({ stars: stars.stars, clean: true }));
+      recordResult({ done: true, stars: stars.stars, clean: true, honest: true });
+    } else if (event === 'win') {
       const journal = rnd(C.JOURNALS);
       const ctx = { journal, p: fmtMetric(a), metric: a.metricLabel, moves: st.moves, suspicion: st.suspicion,
         doi: 1000 + Math.floor(Math.random() * 8999), year: 2026 };
@@ -742,7 +749,12 @@
 
     // the truth reveal
     const reveal = el('div', { class: 'reveal' });
-    if (event === 'retract') {
+    if (event === 'win' && lv.objective === 'honest') {
+      reveal.className = 'reveal good';
+      reveal.innerHTML = lv.truth && lv.truth.exists
+        ? '✅ <b>Done right.</b> A real effect, established by a method a reviewer can trust and a replicator can reproduce. This is the antidote to everything in Campaigns 1–3.'
+        : '✅ <b>Done right.</b> You reached the correct, defensible conclusion — which here was that there is no (meaningful) effect. Reporting that credibly is real science, not a failure.';
+    } else if (event === 'retract') {
       reveal.className = 'reveal bad';
       reveal.innerHTML = '🚨 <b>Caught.</b> You fabricated data and PubPeer noticed. This is the one move that is not a "questionable" practice — it is fraud.';
     } else if (event === 'honest' || event === 'prereg-null') {

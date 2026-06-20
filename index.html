@@ -679,6 +679,67 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return { diff, lo: diff - tc * se, hi: diff + tc * se, se, df };
   }
 
+  // ---- "open science" antidotes (real) ------------------------------------
+
+  // Inverse standard-normal CDF (probit), Acklam's rational approximation.
+  function probit(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+    const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+    const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+    const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+    const pl = 0.02425;
+    let q, r;
+    if (p < pl) { q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    if (p <= 1 - pl) { q = p - 0.5; r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1); }
+    q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+
+  // A-priori sample size PER GROUP for a two-sample t-test (normal approximation).
+  function requiredN(d, alpha, power) {
+    alpha = alpha == null ? 0.05 : alpha;
+    power = power == null ? 0.8 : power;
+    const za = probit(1 - alpha / 2);
+    const zb = probit(power);
+    return Math.ceil(2 * Math.pow((za + zb) / Math.abs(d), 2));
+  }
+
+  // Multiple-comparison adjustment. method: 'bonferroni' | 'bh' (Benjamini-Hochberg FDR).
+  function adjustP(pvals, method) {
+    const m = pvals.length;
+    if (method === 'bonferroni') return pvals.map((p) => Math.min(1, p * m));
+    // Benjamini-Hochberg
+    const order = pvals.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+    const adj = new Array(m);
+    let prev = 1;
+    for (let k = m - 1; k >= 0; k--) {
+      const val = Math.min(prev, (order[k].p * m) / (k + 1));
+      adj[order[k].i] = val;
+      prev = val;
+    }
+    return adj;
+  }
+
+  // Two One-Sided Tests for equivalence to ±bound (raw units of the mean diff).
+  // Equivalent if BOTH one-sided tests reject at alpha (⇔ the (1-2α) CI ⊂ [-bound, bound]).
+  function tost(a, b, bound, alpha) {
+    alpha = alpha == null ? 0.05 : alpha;
+    const na = a.length, nb = b.length;
+    const diff = mean(b) - mean(a);
+    const se = Math.sqrt(variance(a) / na + variance(b) / nb);
+    const df = Math.pow(variance(a) / na + variance(b) / nb, 2) /
+      (Math.pow(variance(a) / na, 2) / (na - 1) + Math.pow(variance(b) / nb, 2) / (nb - 1));
+    // one-sided p that the statistic lies in the rejecting tail (dir = +1 upper, -1 lower)
+    const oneSided = (t, dir) => { const half = tDistTwoTailedP(Math.abs(t), df) / 2; return dir * t > 0 ? half : 1 - half; };
+    const tUpper = (diff + bound) / se; // H0: diff <= -bound  -> reject if t large positive
+    const tLower = (diff - bound) / se; // H0: diff >= +bound  -> reject if t large negative
+    const p1 = oneSided(tUpper, +1); // evidence diff > -bound
+    const p2 = oneSided(tLower, -1); // evidence diff < +bound
+    const equivalent = p1 < alpha && p2 < alpha;
+    return { diff, bound, p1, p2, equivalent, df };
+  }
+
   const Stats = {
     // special functions / cdfs (exported for testing)
     logGamma,
@@ -705,6 +766,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     cohenD,
     tCritical,
     meanDiffCI,
+    // open-science antidotes
+    probit,
+    requiredN,
+    adjustP,
+    tost,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -1991,6 +2057,200 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 })(typeof self !== 'undefined' ? self : this);
 
 
+// ===================== levels.c4.js =====================
+/*
+ * Campaign 4 — "Open Science" (the redemption arc). The goal flips: you no longer
+ * chase p < .05, you reach a DEFENSIBLE conclusion. Each level's evaluate() sets
+ * decisionWin from the honest-method flags AND "no QRP used" (suspicion === 0).
+ * The full QRP arsenal is present and tempting — but it raises suspicion and loses.
+ *
+ * objective:'honest' tells the engine/UI to judge by decisionWin, not the metric.
+ * Registered onto PSPSS_levels.LEVELS. Verified by src/levels.verify.js.
+ */
+(function (root) {
+  'use strict';
+
+  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
+  const makeRNG = RNGlib.RNG;
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const groupArrays = (rows, dv) => { const A = [], B = []; rows.forEach((r) => (r.group === 'A' ? A : B).push(r.vals[dv || 'primary'])); return { A, B }; };
+  const between = (group, primary, extra) => ({ group, vals: Object.assign({ primary }, extra && extra.vals), cov: null, sub: null });
+
+  function twoGroups(seed, nA, nB, delta, sd) {
+    const rng = makeRNG(seed);
+    const p = [];
+    for (let i = 0; i < nA; i++) p.push(between('A', rng.normal(50, sd)));
+    for (let i = 0; i < nB; i++) p.push(between('B', rng.normal(50 + delta, sd)));
+    return p;
+  }
+
+  // shared honest-conclusion goal text
+  const GOAL = 'Reach a defensible conclusion';
+
+  const LEVELS = [
+    // 1 -------------------------------------------------- preregistration
+    {
+      id: 'sign-here-first', campaign: 'c4', objective: 'honest', title: 'Sign Here First',
+      rank: 'Reformed PI', design: 'between', flaw: 'preregistration', par: 1, seed: 1,
+      predictedHigher: 'B', dvLabels: { primary: 'Outcome' },
+      hypothesis: 'A real effect is here — the trick is to claim it the credible way.',
+      brief: 'There IS an effect (B beats A). The whole arsenal of shortcuts is on the menu. But a result is only believable if you committed to the analysis before you saw the data. Do the boring, powerful thing.',
+      build(seed) { return { participants: twoGroups(seed, 26, 26, 6, 10) }; },
+      evaluate(state, ctx) {
+        const { A, B } = groupArrays(state.participants);
+        const r = ctx.Stats.tTestIndependent(A, B, false);
+        return { testName: 'Independent t-test (as preregistered)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: state.preregistered && state.suspicion === 0 };
+      },
+    },
+
+    // 2 -------------------------------------------------- a-priori power
+    {
+      id: 'powered-up', campaign: 'c4', objective: 'honest', title: 'Powered Up',
+      rank: 'Power-User (literally)', design: 'between', flaw: 'power', par: 2, seed: 1,
+      predictedHigher: 'B', expectedD: 0.5, dvLabels: { primary: 'Score' },
+      hypothesis: 'A small real effect exists. Detect it honestly, not by peeking.',
+      brief: 'You start badly under-powered (n=10/group). Tempted to "just collect a few more until p < .05"? That is optional stopping. Instead: work out how many you need IN ADVANCE, then collect exactly that — once.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const mk = (g, n, off) => { const a = []; for (let i = 0; i < n; i++) a.push(between(g, rng.normal(50 + off, 10))); return a; };
+        return { participants: mk('A', 10, 0).concat(mk('B', 10, 5)), reserve: mk('A', 53, 0).concat(mk('B', 53, 5)) };
+      },
+      evaluate(state, ctx) {
+        const { A, B } = groupArrays(state.participants);
+        const r = ctx.Stats.tTestIndependent(A, B, false);
+        return { testName: 'Independent t-test', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: state.adequatePower && state.suspicion === 0 };
+      },
+    },
+
+    // 3 -------------------------------------------------- multiple comparisons
+    {
+      id: 'all-of-them', campaign: 'c4', objective: 'honest', title: 'All of Them',
+      rank: 'Honest Broker', design: 'between', flaw: 'multiplicity', par: 1, seed: 1,
+      predictedHigher: 'B', dvLabels: { primary: 'Wellbeing', dv2: 'Focus', dv3: 'Creativity', dv4: 'Vitality', dv5: 'Charisma' },
+      hypothesis: 'You measured five outcomes. One looks significant. Is it real?',
+      brief: 'Five outcomes, and one squeaked under .05. Reporting just that one is cherry-picking. The honest move is to adjust every p-value for the family of tests you ran — and report what survives (probably nothing).',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const dvs = ['primary', 'dv2', 'dv3', 'dv4', 'dv5'];
+        const parts = [];
+        for (let i = 0; i < 22; i++) {
+          for (const g of ['A', 'B']) {
+            const vals = {};
+            dvs.forEach((dv) => (vals[dv] = rng.normal(50, 9))); // all genuinely null
+            parts.push({ group: g, vals, cov: null, sub: null });
+          }
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const dvs = state.dvNames;
+        const ps = dvs.map((dv) => { const { A, B } = groupArrays(state.participants, dv); return ctx.Stats.tTestIndependent(A, B, false).p; });
+        const minIdx = ps.indexOf(Math.min.apply(null, ps));
+        const adj = state.corrected ? ctx.Stats.adjustP(ps, state.corrected) : ps;
+        const shown = state.corrected ? Math.min.apply(null, adj) : ps[minIdx];
+        const { A, B } = groupArrays(state.participants, dvs[minIdx]);
+        const tt = ctx.Stats.tTestIndependent(A, B, false);
+        return { testName: state.corrected ? `Best outcome (${state.level.dvLabels[dvs[minIdx]]}), ${state.corrected === 'bonferroni' ? 'Bonferroni' : 'BH'}-adjusted` : `Best of ${dvs.length} outcomes: ${state.level.dvLabels[dvs[minIdx]]} (unadjusted)`, statLabel: 't', statistic: tt.t, df: tt.df, p: shown, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: !!state.corrected && state.suspicion === 0 };
+      },
+    },
+
+    // 4 -------------------------------------------------- equivalence (TOST)
+    {
+      id: 'absence-of-evidence', campaign: 'c4', objective: 'honest', title: 'Absence of Evidence',
+      rank: 'Null Whisperer', design: 'between', flaw: 'equivalence', par: 1, seed: 1,
+      predictedHigher: 'B', equivBound: 3, dvLabels: { primary: 'Outcome' },
+      hypothesis: 'There is genuinely no effect. Can you say so, credibly?',
+      brief: '"p = .42, n.s." proves nothing — absence of evidence is not evidence of absence. With enough data you can do better: an equivalence test can actively show the effect is too small to matter.',
+      build(seed) { return { participants: twoGroups(seed, 40, 40, 0, 6) }; },
+      evaluate(state, ctx) {
+        const { A, B } = groupArrays(state.participants);
+        const r = ctx.Stats.tTestIndependent(A, B, false);
+        return { testName: state.tostResult ? 'Equivalence test (TOST)' : 'Independent t-test', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: !!(state.tostResult && state.tostResult.equivalent) && state.suspicion === 0 };
+      },
+    },
+
+    // 5 -------------------------------------------------- honest multiverse
+    {
+      id: 'whole-garden', campaign: 'c4', objective: 'honest', title: 'The Whole Garden',
+      rank: 'Multiverse Cartographer', design: 'between', flaw: 'multiverse-honest', par: 1, seed: 1,
+      predictedHigher: 'B',
+      specs: [
+        { label: 'no covariates', controls: [] }, { label: 'control Age', controls: ['cov0'] },
+        { label: 'control IQ', controls: ['cov1'] }, { label: 'control Mood', controls: ['cov2'] },
+        { label: 'control Sleep', controls: ['cov3'] }, { label: 'Age + Mood', controls: ['cov0', 'cov2'] },
+      ],
+      dvLabels: { primary: 'Effect' },
+      hypothesis: 'Across reasonable models, is the effect robust — or did one spec just get lucky?',
+      brief: 'One of your six model specifications is significant. Picking it is a specification search. The honest move is to report the entire specification curve and let the reader judge robustness.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 36; i++) {
+          const g = i % 2 === 0 ? 'A' : 'B';
+          parts.push({ group: g, vals: { primary: rng.normal(50, 8) }, cov0: rng.normal(40, 10), cov1: rng.normal(100, 15), cov2: rng.normal(0, 1), cov3: rng.normal(7, 1.5), cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const idx = state.specIndex == null ? 0 : state.specIndex;
+        const spec = state.level.specs[idx];
+        const y = state.participants.map((r) => r.vals.primary);
+        const treat = state.participants.map((r) => (r.group === 'B' ? 1 : 0));
+        const cols = [treat].concat(spec.controls.map((c) => state.participants.map((r) => r[c])));
+        const r = ctx.Stats.ols(y, cols);
+        const c = r.coefs[1];
+        const { A, B } = groupArrays(state.participants);
+        return { testName: state.multivReported ? 'Full specification curve (reported)' : 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: state.multivReported && state.suspicion === 0 };
+      },
+    },
+
+    // 6 -------------------------------------------------- replication (capstone)
+    {
+      id: 'the-replication', campaign: 'c4', objective: 'honest', title: 'The Replication',
+      rank: 'Replicator', design: 'between', flaw: 'replication', par: 3, seed: 1,
+      predictedHigher: 'B', expectedD: 0.5, dvLabels: { primary: 'Effect' },
+      hypothesis: 'A famous, flashy finding. Does it hold up?',
+      brief: 'You are replicating a celebrated effect (the original claimed d ≈ 0.5). Do it properly: preregister, power for the original effect, collect that sample once, and report what you find — even if the legend dies.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const mk = (g, n, off) => { const a = []; for (let i = 0; i < n; i++) a.push(between(g, rng.normal(50 + off, 10))); return a; };
+        // the original was a false positive: the true effect is ~nil
+        return { participants: mk('A', 12, 0).concat(mk('B', 12, 0.6)), reserve: mk('A', 51, 0).concat(mk('B', 51, 0.6)) };
+      },
+      evaluate(state, ctx) {
+        const { A, B } = groupArrays(state.participants);
+        const r = ctx.Stats.tTestIndependent(A, B, false);
+        return { testName: 'Preregistered direct replication', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups: { 'Mean A': mean(A), 'Mean B': mean(B) }, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B, goalText: GOAL, decisionWin: state.preregistered && state.adequatePower && state.suspicion === 0 };
+      },
+    },
+  ];
+
+  // Honest tools + the full tempting QRP arsenal. The QRPs raise suspicion, so they
+  // can never satisfy the "no QRP used" (suspicion===0) part of decisionWin — they're
+  // visible temptations that lose. Generic decoy data makes the flag-based QRPs appear.
+  const HONEST = ['preregister', 'power-analysis', 'collect-to-power', 'correct-comparisons', 'equivalence-test', 'report-multiverse'];
+  const QRP = ['choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
+  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
+  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
+  LEVELS.forEach((l) => {
+    l.truth = { exists: l.id === 'sign-here-first' || l.id === 'powered-up' };
+    if (l.lmm === undefined) l.lmm = true;
+    if (l.moderator === undefined) l.moderator = 'mod';
+    if (l.aggregable === undefined) l.aggregable = true;
+    if (l.tests === undefined) l.tests = GENERIC_TESTS;
+    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
+    l.allowedTools = HONEST.concat(QRP);
+  });
+
+  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
+  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
+
+  const api = { C4_LEVELS: LEVELS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PSPSS_levels_c4 = api;
+})(typeof self !== 'undefined' ? self : this);
+
+
 // ===================== campaigns.js =====================
 /*
  * Campaign grouping + gated unlock metadata. The flat level registry stays in
@@ -2018,6 +2278,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       name: 'Campaign 3 — In Bayes We Trust',
       subtitle: 'No more p-values. Now you have priors, and priors can be... persuaded.',
       levelIds: ['pick-a-prior', 'watch-bf-climb', 'directional-now', 'bf01-flip', 'robustness-buffet', 'sequential-strong', 'full-prior-hack', 'default-prior-trap'],
+    },
+    {
+      id: 'c4',
+      name: 'Campaign 4 — Open Science',
+      subtitle: 'The redemption arc. Stop chasing significance; reach a conclusion you can defend.',
+      levelIds: ['sign-here-first', 'powered-up', 'all-of-them', 'absence-of-evidence', 'whole-garden', 'the-replication'],
     },
   ];
 
@@ -2080,6 +2346,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       priorScale: level.defaultPrior || 0.707, // Cauchy width r
       oneSided: false,
       reportBF01: false,
+      // --- Campaign 4 (Open Science) flags ---
+      preregistered: false,
+      powerN: null, // required N per group, once power-analysis is run
+      adequatePower: false, // collected to the pre-planned N
+      corrected: null, // 'bonferroni' | 'bh'
+      tostResult: null, // equivalence-test result
+      multivReported: false, // honest specification-curve report
       moves: 0,
       suspicion: 0,
       log: [],
@@ -2163,13 +2436,15 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       effect = Stats.cohenD(raw.aArr, raw.bArr);
       ci = Stats.meanDiffCI(raw.aArr, raw.bArr);
     }
+    // Campaign 4 "Open Science" levels decide the win by a defensible-conclusion
+    // predicate (decisionWin), not by crossing the metric threshold.
     const out = Object.assign({}, raw, {
       metricKind: isBF ? 'bf' : 'p',
       metricLabel: label,
       metricValue: value,
-      goalText: isBF ? label + ' > ' + thr : label + ' < ' + thr,
+      goalText: raw.goalText || (isBF ? label + ' > ' + thr : label + ' < ' + thr),
       significant: crossed,
-      win: crossed && dirOK,
+      win: raw.decisionWin !== undefined ? raw.decisionWin : crossed && dirOK,
       effect,
       ci,
     });
@@ -2865,6 +3140,80 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         return { message: `Ran a "robustness" check across seven priors and, reassuringly, adopted the most robust one (r = ${best}).` };
       },
     },
+
+    // ====================== Campaign 4 (Open Science) — honest tools ======================
+    // These are GOOD practice, so they cost a move but add ZERO suspicion. Each level's
+    // evaluate() decides the win from these flags + "no QRP used" (suspicion === 0).
+    {
+      id: 'preregister',
+      label: 'Preregister the Analysis Plan',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && !s.preregistered,
+      run(state) { state.preregistered = true; return { message: 'Analysis plan timestamped and registered (OSF). You are now accountable to your past self — the honest constraint.' }; },
+    },
+    {
+      id: 'power-analysis',
+      label: 'Run an A-Priori Power Analysis',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.powerN == null,
+      run(state) {
+        const d = state.level.expectedD || 0.5;
+        state.powerN = Stats.requiredN(d, 0.05, 0.8);
+        return { message: `For the smallest effect worth detecting (d = ${d}), 80% power at α=.05 needs N ≈ ${state.powerN} per group. Plan the sample BEFORE collecting.` };
+      },
+    },
+    {
+      id: 'collect-to-power',
+      label: 'Collect the Pre-Planned Sample',
+      kind: 'intervention', menu: 'Data', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.powerN != null && !s.adequatePower && s.reserve && s.reserve.length > 0,
+      run(state) {
+        const n = state.reserve.length;
+        state.participants = state.participants.concat(state.reserve);
+        state.reserve = [];
+        state.adequatePower = true;
+        return { message: `Collected the full pre-registered sample (+${n}) in one go — no peeking, no stopping early. This is how you avoid optional stopping.` };
+      },
+    },
+    {
+      id: 'correct-comparisons',
+      label: 'Correct for Multiple Comparisons…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      needsChoice: 'correction',
+      enabled: (s) => s.level.objective === 'honest' && s.dvNames.length > 1 && !s.corrected,
+      run(state, payload) {
+        state.corrected = (payload && payload.method) || 'bh';
+        return { message: `Adjusted every outcome's p-value for the ${state.dvNames.length} tests you ran (${state.corrected === 'bonferroni' ? 'Bonferroni' : 'Benjamini-Hochberg FDR'}). The honest family-wise picture, not the cherry.` };
+      },
+    },
+    {
+      id: 'equivalence-test',
+      label: 'Run an Equivalence Test (TOST)',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.design === 'between' && !s.tostResult,
+      run(state) {
+        const { A, B } = getArrays(state);
+        const bound = state.level.equivBound || (0.5 * Stats.sd(A.concat(B)));
+        state.tostResult = Stats.tost(A, B, bound);
+        return { message: state.tostResult.equivalent
+          ? `TOST: the difference is statistically within ±${bound.toFixed(1)} of zero — you can defensibly conclude PRACTICAL EQUIVALENCE. "Absence of evidence" became "evidence of absence".`
+          : `TOST: cannot conclude equivalence within ±${bound.toFixed(1)} — the data are genuinely inconclusive.` };
+      },
+    },
+    {
+      id: 'report-multiverse',
+      label: 'Report the Full Specification Curve',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && Array.isArray(s.level.specs) && !s.multivReported,
+      run(state) {
+        // count how many specifications are significant; honest summary is the whole picture
+        let sig = 0;
+        state.level.specs.forEach((sp, i) => { state.specIndex = i; if (analyze(state).significant) sig++; });
+        state.specIndex = null;
+        state.multivReported = true;
+        return { message: `Reported all ${state.level.specs.length} specifications: ${sig} significant. You let the reader see the whole garden of forking paths, not just the prettiest flower.` };
+      },
+    },
   ];
 
   function id(p) {
@@ -3368,6 +3717,61 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       antidote: 'Report the ambiguity; collect a preregistered, adequately-powered sample.',
       verdict: 'honest',
     },
+    // ---- Campaign 4: the antidotes (verdict 'honest') ----
+    preregistration: {
+      term: 'Preregistration',
+      plain: 'Committing your hypothesis and analysis plan publicly, with a timestamp, before seeing the data.',
+      harm: 'None — it is the antidote. It converts flexible "exploratory" choices into a fixed, accountable plan, controlling the error rate.',
+      citation: 'Nosek et al. (2018); Chambers, Registered Reports.',
+      realCase: 'Registered Reports are accepted on the basis of the design, before results exist.',
+      antidote: 'You are doing it. Distinguish confirmatory (preregistered) from exploratory analyses.',
+      verdict: 'honest',
+    },
+    power: {
+      term: 'A-priori power analysis',
+      plain: 'Working out the sample size needed to detect the smallest effect of interest, before collecting.',
+      harm: 'None — it is the antidote to under-powered studies and to optional stopping.',
+      citation: 'Cohen (1988); Button et al. (2013), "Power failure".',
+      realCase: 'Chronically under-powered fields produce inflated, unreplicable effects (the winner\'s curse).',
+      antidote: 'Plan N in advance for a defensible effect size; collect once.',
+      verdict: 'honest',
+    },
+    multiplicity: {
+      term: 'Multiple-comparison correction',
+      plain: 'Adjusting p-values for the number of tests you ran (Bonferroni / Benjamini-Hochberg FDR).',
+      harm: 'None — it keeps the family-wise / false-discovery rate honest when you test many things.',
+      citation: 'Benjamini & Hochberg (1995).',
+      realCase: 'Twenty tests at α=.05 yield ~one "significant" result by chance alone.',
+      antidote: 'Pre-specify the primary test; correct the rest; report all of them.',
+      verdict: 'honest',
+    },
+    equivalence: {
+      term: 'Equivalence testing (TOST)',
+      plain: 'Two one-sided tests that can actively support "no meaningful effect" within a pre-set bound.',
+      harm: 'None — it lets you conclude absence properly, instead of misreading a non-significant test.',
+      citation: 'Lakens (2017), "Equivalence tests".',
+      realCase: 'Absence of evidence is not evidence of absence — unless you test for it.',
+      antidote: 'Set a smallest-effect-of-interest bound a priori; run TOST.',
+      verdict: 'honest',
+    },
+    'multiverse-honest': {
+      term: 'Transparent multiverse / specification curve',
+      plain: 'Running all defensible specifications and reporting the whole distribution of results.',
+      harm: 'None — it shows how robust (or fragile) a finding is across reasonable analytic choices.',
+      citation: 'Steegen et al. (2016); Simonsohn, Simmons & Nelson, specification curve.',
+      realCase: 'A claim that survives only one of many specifications is not robust.',
+      antidote: 'You are doing it. Report the curve, not the corner.',
+      verdict: 'honest',
+    },
+    replication: {
+      term: 'Direct replication',
+      plain: 'Re-running a study, preregistered and adequately powered, to see if the effect holds.',
+      harm: 'None — replication is how science self-corrects, even when a beloved effect dies.',
+      citation: 'Open Science Collaboration (2015) — ~36% of psychology effects replicated.',
+      realCase: 'Many famous effects (ego depletion, power posing) shrank or vanished on replication.',
+      antidote: 'Preregister, power for the original effect, report whatever you find.',
+      verdict: 'honest',
+    },
   };
 
   // Short "what you did" label per tool id, for the debrief's action list.
@@ -3393,6 +3797,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     'collect-more-bayes': 'collected more data until the BF rose',
     'report-bf01': 'reported BF₀₁ as if it supported you',
     'prior-robustness': 'kept the most flattering prior',
+    // Campaign 4 — honest methods
+    preregister: 'preregistered the analysis plan',
+    'power-analysis': 'ran an a-priori power analysis',
+    'collect-to-power': 'collected the pre-planned sample in one go',
+    'correct-comparisons': 'corrected for multiple comparisons',
+    'equivalence-test': 'ran an equivalence test (TOST)',
+    'report-multiverse': 'reported the full specification curve',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
@@ -3477,6 +3888,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     { id: 'prior-whisperer', title: 'Prior Whisperer', desc: 'Clear a Bayesian level by tuning the prior.', check: (c) => c.event === 'win' && /prior/.test(c.level.flaw) },
     { id: 'decisive', title: 'Decisive (Allegedly)', desc: 'Clear a "house rule" level (p < .001 or BF > 10).', check: (c) => c.event === 'win' && c.career.p001Wins >= 1 },
     { id: 'prolific', title: 'Prolific', desc: 'Reach 10 publications.', check: (c) => c.career.publications >= 10 },
+    // Campaign 4 — the redemption arc
+    { id: 'preregistered', title: 'Preregistered!', desc: 'Win an Open Science level the honest way.', check: (c) => c.event === 'win' && c.level.objective === 'honest' },
+    { id: 'powered', title: 'Adequately Powered', desc: 'Clear the power-analysis level.', check: (c) => c.event === 'win' && c.level.flaw === 'power' },
+    { id: 'support-null', title: 'Evidence of Absence', desc: 'Defend a null with an equivalence test.', check: (c) => c.event === 'win' && c.level.flaw === 'equivalence' },
+    { id: 'replicator', title: 'The Replicator', desc: 'Complete the preregistered replication.', check: (c) => c.event === 'win' && c.level.flaw === 'replication' },
   ];
 
   function evaluateAchievements(ctx, already) {
@@ -3606,6 +4022,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       tip: 'A "robustness analysis" across priors — keep the biggest BF.',
       cite: 'A robustness check reports the RANGE honestly; cherry-picking its maximum defeats the point.',
     },
+    // ---- Campaign 4 — the honest methods (the win condition here) ----
+    preregister: { tip: 'Commit the plan before you see the data. The honest constraint.', cite: 'Nosek et al. (2018); Registered Reports (Chambers).' },
+    'power-analysis': { tip: 'Compute the N you need BEFORE collecting.', cite: 'Cohen (1988); Button et al. (2013).' },
+    'collect-to-power': { tip: 'Collect the pre-planned sample once — no peeking.', cite: 'The antidote to optional stopping.' },
+    'correct-comparisons': { tip: 'Adjust p-values for the family of tests you ran.', cite: 'Benjamini & Hochberg (1995).' },
+    'equivalence-test': { tip: 'Actively show "no meaningful effect" (TOST).', cite: 'Lakens (2017).' },
+    'report-multiverse': { tip: 'Report the whole specification curve, not the best corner.', cite: 'Steegen et al. (2016).' },
   };
 
   const PURE_TIPS = {
@@ -3625,6 +4048,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',
     'spec-multiverse': 'Try everything. Keep the win. ♾️',
+    preregister: 'Pinky-promise, notarized. ✍️',
+    'power-analysis': 'Do the math first. 🔢',
+    'collect-to-power': 'Collect once, no peeking. 📦',
+    'correct-comparisons': 'Tax every test. 🧾',
+    'equivalence-test': 'Prove the nothing. 🟰',
+    'report-multiverse': 'Show the whole garden. 🌳',
     'set-prior': 'Pick the prior that vibes. 🔮',
     'one-sided-prior': 'You called it. (You didn’t.) ➡️',
     'collect-more-bayes': 'Feed the Bayes factor. 📈',
@@ -4044,7 +4473,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       .map(({ t }) => ({
         label: t.label,
         tip: C.tooltip(t.id, App.mode),
-        cost: t.kind === 'diagnostic' ? 'free' : '+1 move · +' + (t.suspicion || 0) + '%',
+        cost: t.kind === 'diagnostic' ? 'free' : '+1 move' + (t.suspicion ? ' · +' + t.suspicion + '%' : ''),
         danger: t.danger,
         disabled: false,
         run: () => onTool(t.id),
@@ -4059,6 +4488,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     if (tool.needsChoice === 'lmm') return chooseFromList('Specify Random-Effects Structure', [{ id: 'max', label: 'Maximal (random intercept + slope)' }, { id: 'ri', label: 'Random intercept only' }], (o) => doTool('fit-lmm', { structure: o.id }));
     if (tool.needsChoice === 'control') return chooseFromList('Add a Covariate', App.state.level.candidateControls.concat([{ id: null, label: 'None (remove covariate)' }]), (o) => doTool('add-control', { var: o.id }));
     if (tool.needsChoice === 'prior') return chooseFromList('Set Cauchy Prior Width (r)', PRIOR_OPTS, (o) => doTool('set-prior', { r: o.r }));
+    if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }
@@ -4244,7 +4674,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       block.appendChild(el('div', { class: 'out-note out-effect', html: `Effect size: Cohen's <i>d</i> = <b>${fmt(a.effect, 2)}</b>${ciTxt}` + (spansZero ? ' <span class="out-flag">— CI spans zero</span>' : '') }));
     }
 
-    if (a.significant && !a.win) {
+    if (a.significant && !a.win && App.state.level.objective !== 'honest') {
       block.appendChild(el('div', { class: 'out-flag', text: '⚠ Crossed the threshold — but in the WRONG direction. Your hypothesis predicted the other way.' }));
     }
     if (logEntry && logEntry.danger) {
@@ -4389,7 +4819,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     const body = el('div');
     let stars = E.stars(st);
 
-    if (event === 'win') {
+    if (event === 'win' && lv.objective === 'honest') {
+      // Campaign 4: you reached a defensible conclusion the right way.
+      body.appendChild(el('h2', { class: 'win', text: '🪪 Defensible Conclusion — Credibly Published' }));
+      body.appendChild(el('div', { html: `Your finding is one a reviewer can <i>trust</i> and a replicator can <i>reproduce</i> — reached in <b>${st.moves}</b> move(s) with <b>0%</b> suspicion. No torture required.<br><br>This is what good science feels like: less glamorous, far more durable.` }));
+      body.appendChild(starRow({ stars: stars.stars, clean: true }));
+      recordResult({ done: true, stars: stars.stars, clean: true, honest: true });
+    } else if (event === 'win') {
       const journal = rnd(C.JOURNALS);
       const ctx = { journal, p: fmtMetric(a), metric: a.metricLabel, moves: st.moves, suspicion: st.suspicion,
         doi: 1000 + Math.floor(Math.random() * 8999), year: 2026 };
@@ -4471,7 +4907,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
     // the truth reveal
     const reveal = el('div', { class: 'reveal' });
-    if (event === 'retract') {
+    if (event === 'win' && lv.objective === 'honest') {
+      reveal.className = 'reveal good';
+      reveal.innerHTML = lv.truth && lv.truth.exists
+        ? '✅ <b>Done right.</b> A real effect, established by a method a reviewer can trust and a replicator can reproduce. This is the antidote to everything in Campaigns 1–3.'
+        : '✅ <b>Done right.</b> You reached the correct, defensible conclusion — which here was that there is no (meaningful) effect. Reporting that credibly is real science, not a failure.';
+    } else if (event === 'retract') {
       reveal.className = 'reveal bad';
       reveal.innerHTML = '🚨 <b>Caught.</b> You fabricated data and PubPeer noticed. This is the one move that is not a "questionable" practice — it is fraud.';
     } else if (event === 'honest' || event === 'prereg-null') {

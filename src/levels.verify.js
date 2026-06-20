@@ -11,6 +11,7 @@
  */
 require('./levels.c2');
 require('./levels.c3');
+require('./levels.c4');
 const { LEVELS } = require('./levels');
 const E = require('./engine');
 
@@ -42,7 +43,15 @@ const SOLUTIONS = {
   'sequential-strong': [{ id: 'collect-more-bayes' }],
   'full-prior-hack': [{ id: 'collect-more-bayes' }, { id: 'one-sided-prior' }],
   'default-prior-trap': null,
+  // Campaign 4 — the honest pipelines
+  'sign-here-first': [{ id: 'preregister' }],
+  'powered-up': [{ id: 'power-analysis' }, { id: 'collect-to-power' }],
+  'all-of-them': [{ id: 'correct-comparisons', payload: { method: 'bh' } }],
+  'absence-of-evidence': [{ id: 'equivalence-test' }],
+  'whole-garden': [{ id: 'report-multiverse' }],
+  'the-replication': [{ id: 'preregister' }, { id: 'power-analysis' }, { id: 'collect-to-power' }],
 };
+const HONEST_TOOLS = ['preregister', 'power-analysis', 'collect-to-power', 'correct-comparisons', 'equivalence-test', 'report-multiverse'];
 
 // the single intended winning option (for decoy uniqueness checks)
 const INTENDED = {
@@ -87,6 +96,7 @@ function enumOptions(level) {
     else if (tid === 'fit-lmm') ['ri', 'max'].forEach((st) => opts.push({ id: 'fit-lmm', payload: { structure: st }, label: 'fit-lmm:' + st }));
     else if (tid === 'add-control') (level.candidateControls || []).forEach((c) => opts.push({ id: 'add-control', payload: { var: c.id }, label: 'add-control:' + c.id }));
     else if (tid === 'pick-outcome') s0.dvNames.forEach((dv) => opts.push({ id: 'pick-outcome', payload: { dv }, label: 'pick-outcome:' + dv }));
+    else if (tid === 'correct-comparisons') ['bonferroni', 'bh'].forEach((mth) => opts.push({ id: 'correct-comparisons', payload: { method: mth }, label: 'correct-comparisons:' + mth }));
     else opts.push({ id: tid, payload: undefined, label: tid });
   });
   return opts;
@@ -95,7 +105,7 @@ function enumOptions(level) {
 console.log('Verifying levels:\n');
 for (const level of LEVELS) {
   console.log(`[${level.id}] ${level.title}  (par ${level.par})`);
-  const isTrap = /honest/.test(level.flaw);
+  const isTrap = level.flaw === 'honest-null' || level.flaw === 'honest-lmm' || level.flaw === 'honest-bayes';
   const raw = E.analyze(E.newState(level, undefined, 'tenure'));
 
   // ground-truth metadata present + consistent
@@ -123,7 +133,7 @@ for (const level of LEVELS) {
   // Campaign 2/3 full-arsenal: every offered tool must apply without error; the
   // intended option must be among the winners; a trap must have NO winner. Extra
   // winners are allowed (alternate p-hacks are realistic) and just reported.
-  if (level.campaign === 'c2' || level.campaign === 'c3') {
+  if (level.campaign === 'c2' || level.campaign === 'c3' || level.campaign === 'c4') {
     const opts = enumOptions(level);
     const winners = [];
     let errored = 0;
@@ -136,6 +146,7 @@ for (const level of LEVELS) {
     check('no offered tool throws', errored === 0);
     if (level.campaign === 'c2' && isTrap) check('no offered option wins (trap)', winners.length === 0, 'winners=' + JSON.stringify(winners));
     else if (level.campaign === 'c2') check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
+    else if (level.campaign === 'c4') check('only HONEST tools can win (QRPs lose)', winners.every((w) => HONEST_TOOLS.indexOf(w.split(':')[0]) >= 0), 'winners=' + JSON.stringify(winners));
     console.log(`     (full arsenal: ${opts.length} clickable options, ${winners.length} win — ${winners.join(', ') || 'none via single move'})`);
   }
 

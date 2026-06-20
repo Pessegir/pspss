@@ -50,6 +50,13 @@
       priorScale: level.defaultPrior || 0.707, // Cauchy width r
       oneSided: false,
       reportBF01: false,
+      // --- Campaign 4 (Open Science) flags ---
+      preregistered: false,
+      powerN: null, // required N per group, once power-analysis is run
+      adequatePower: false, // collected to the pre-planned N
+      corrected: null, // 'bonferroni' | 'bh'
+      tostResult: null, // equivalence-test result
+      multivReported: false, // honest specification-curve report
       moves: 0,
       suspicion: 0,
       log: [],
@@ -133,13 +140,15 @@
       effect = Stats.cohenD(raw.aArr, raw.bArr);
       ci = Stats.meanDiffCI(raw.aArr, raw.bArr);
     }
+    // Campaign 4 "Open Science" levels decide the win by a defensible-conclusion
+    // predicate (decisionWin), not by crossing the metric threshold.
     const out = Object.assign({}, raw, {
       metricKind: isBF ? 'bf' : 'p',
       metricLabel: label,
       metricValue: value,
-      goalText: isBF ? label + ' > ' + thr : label + ' < ' + thr,
+      goalText: raw.goalText || (isBF ? label + ' > ' + thr : label + ' < ' + thr),
       significant: crossed,
-      win: crossed && dirOK,
+      win: raw.decisionWin !== undefined ? raw.decisionWin : crossed && dirOK,
       effect,
       ci,
     });
@@ -833,6 +842,80 @@
         grid.forEach((r) => { state.priorScale = r; const a = analyze(state); if (a.metricValue > bestBF) { bestBF = a.metricValue; best = r; } });
         state.priorScale = best;
         return { message: `Ran a "robustness" check across seven priors and, reassuringly, adopted the most robust one (r = ${best}).` };
+      },
+    },
+
+    // ====================== Campaign 4 (Open Science) — honest tools ======================
+    // These are GOOD practice, so they cost a move but add ZERO suspicion. Each level's
+    // evaluate() decides the win from these flags + "no QRP used" (suspicion === 0).
+    {
+      id: 'preregister',
+      label: 'Preregister the Analysis Plan',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && !s.preregistered,
+      run(state) { state.preregistered = true; return { message: 'Analysis plan timestamped and registered (OSF). You are now accountable to your past self — the honest constraint.' }; },
+    },
+    {
+      id: 'power-analysis',
+      label: 'Run an A-Priori Power Analysis',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.powerN == null,
+      run(state) {
+        const d = state.level.expectedD || 0.5;
+        state.powerN = Stats.requiredN(d, 0.05, 0.8);
+        return { message: `For the smallest effect worth detecting (d = ${d}), 80% power at α=.05 needs N ≈ ${state.powerN} per group. Plan the sample BEFORE collecting.` };
+      },
+    },
+    {
+      id: 'collect-to-power',
+      label: 'Collect the Pre-Planned Sample',
+      kind: 'intervention', menu: 'Data', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.powerN != null && !s.adequatePower && s.reserve && s.reserve.length > 0,
+      run(state) {
+        const n = state.reserve.length;
+        state.participants = state.participants.concat(state.reserve);
+        state.reserve = [];
+        state.adequatePower = true;
+        return { message: `Collected the full pre-registered sample (+${n}) in one go — no peeking, no stopping early. This is how you avoid optional stopping.` };
+      },
+    },
+    {
+      id: 'correct-comparisons',
+      label: 'Correct for Multiple Comparisons…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      needsChoice: 'correction',
+      enabled: (s) => s.level.objective === 'honest' && s.dvNames.length > 1 && !s.corrected,
+      run(state, payload) {
+        state.corrected = (payload && payload.method) || 'bh';
+        return { message: `Adjusted every outcome's p-value for the ${state.dvNames.length} tests you ran (${state.corrected === 'bonferroni' ? 'Bonferroni' : 'Benjamini-Hochberg FDR'}). The honest family-wise picture, not the cherry.` };
+      },
+    },
+    {
+      id: 'equivalence-test',
+      label: 'Run an Equivalence Test (TOST)',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && s.design === 'between' && !s.tostResult,
+      run(state) {
+        const { A, B } = getArrays(state);
+        const bound = state.level.equivBound || (0.5 * Stats.sd(A.concat(B)));
+        state.tostResult = Stats.tost(A, B, bound);
+        return { message: state.tostResult.equivalent
+          ? `TOST: the difference is statistically within ±${bound.toFixed(1)} of zero — you can defensibly conclude PRACTICAL EQUIVALENCE. "Absence of evidence" became "evidence of absence".`
+          : `TOST: cannot conclude equivalence within ±${bound.toFixed(1)} — the data are genuinely inconclusive.` };
+      },
+    },
+    {
+      id: 'report-multiverse',
+      label: 'Report the Full Specification Curve',
+      kind: 'intervention', menu: 'Analyze', suspicion: 0,
+      enabled: (s) => s.level.objective === 'honest' && Array.isArray(s.level.specs) && !s.multivReported,
+      run(state) {
+        // count how many specifications are significant; honest summary is the whole picture
+        let sig = 0;
+        state.level.specs.forEach((sp, i) => { state.specIndex = i; if (analyze(state).significant) sig++; });
+        state.specIndex = null;
+        state.multivReported = true;
+        return { message: `Reported all ${state.level.specs.length} specifications: ${sig} significant. You let the reader see the whole garden of forking paths, not just the prettiest flower.` };
       },
     },
   ];

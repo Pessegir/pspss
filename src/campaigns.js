@@ -25,6 +25,12 @@
       subtitle: 'No more p-values. Now you have priors, and priors can be... persuaded.',
       levelIds: ['pick-a-prior', 'watch-bf-climb', 'directional-now', 'bf01-flip', 'robustness-buffet', 'sequential-strong', 'full-prior-hack', 'default-prior-trap'],
     },
+    {
+      id: 'c4',
+      name: 'Campaign 4 — Open Science',
+      subtitle: 'The redemption arc. Stop chasing significance; reach a conclusion you can defend.',
+      levelIds: ['sign-here-first', 'powered-up', 'all-of-them', 'absence-of-evidence', 'whole-garden', 'the-replication'],
+    },
   ];
 
   const api = { CAMPAIGNS };
