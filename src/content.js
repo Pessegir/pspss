@@ -87,6 +87,16 @@
       cite: 'The multiverse exists to be reported transparently — not cherry-picked (Steegen et al., 2016; Simonsohn et al., specification curve).',
     },
 
+    // ---- Campaign 5 (mixed-model masterclass) ----
+    'choose-df': {
+      tip: 'The finite df is small and shy. The Wald z has infinite df and no shame.',
+      cite: 'With few clusters, naive z/χ² p-values are anticonservative — use Satterthwaite/Kenward-Roger (Luke, 2017; lmerTest).',
+    },
+    'fit-glmm': {
+      tip: 'Pick the family that fits your outcome — or the one that fits your hopes.',
+      cite: 'Wrong family / ignored overdispersion gives optimistic SEs (Bolker et al., 2009; Harrison, 2014).',
+    },
+
     // ---- Campaign 3 (Bayesian) ----
     'plot-bf-robustness': { tip: 'BF as a function of the prior. Find the flattering corner.' },
     'set-prior': {
@@ -131,6 +141,8 @@
     fabricate: 'Become legend. Become retracted. 🎲',
     'choose-test': 'Roll the test dice until you win. 🎰',
     'fit-lmm': 'Slopes? In THIS economy? 📉',
+    'choose-df': 'Infinite degrees of freedom, baby. ♾️',
+    'fit-glmm': 'Pick the distribution that vibes. 🎲',
     'median-split': 'Snap the variable in half. 🔪',
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',

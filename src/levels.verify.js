@@ -57,6 +57,9 @@ const SOLUTIONS = {
   'naive-df': [{ id: 'choose-df', payload: { method: 'z' } }],
   'within-between': [{ id: 'set-aggregation' }],
   'wrong-level': [{ id: 'choose-test', payload: { method: 'lmm-clinic' } }],
+  'glmm-binary': [{ id: 'choose-test', payload: { method: 'glm-logistic' } }],
+  'glmm-overdispersion': [{ id: 'fit-glmm', payload: { family: 'poisson', olre: false } }],
+  'forking-models': [{ id: 'fit-lmm', payload: { structure: 'ri' } }, { id: 'choose-df', payload: { method: 'z' } }],
 };
 const HONEST_TOOLS = ['preregister', 'power-analysis', 'collect-to-power', 'correct-comparisons', 'equivalence-test', 'report-multiverse'];
 
@@ -67,6 +70,8 @@ const INTENDED = {
   simpson: 'set-aggregation', 'spec-curve': 'spec-multiverse', 'outcome-switch': 'pick-outcome:dv4',
   'pseudo-redux': 'choose-test:ols', 'slopes-redux': 'fit-lmm:ri', 'naive-df': 'choose-df:z',
   'within-between': 'set-aggregation', 'wrong-level': 'choose-test:lmm-clinic',
+  'glmm-binary': 'choose-test:glm-logistic', 'glmm-overdispersion': 'fit-glmm:poisson',
+  // 'forking-models' is a multi-move chain (no single-move winner) — intentionally absent.
 };
 
 const ALTERNATES = { outlier: [[{ id: 'robustness-check' }], [{ id: 'winsorize' }]], skew: [[{ id: 'robustness-check' }]] };

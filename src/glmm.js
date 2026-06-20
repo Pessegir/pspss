@@ -39,10 +39,11 @@
     binomial: {
       linkinv: (eta) => 1 / (1 + Math.exp(-eta)),
       irls(eta, y, n) {
-        let mu = 1 / (1 + Math.exp(-eta));
+        const e = Math.max(-30, Math.min(30, eta));
+        let mu = 1 / (1 + Math.exp(-e));
         mu = Math.min(1 - 1e-10, Math.max(1e-10, mu));
         const w = n * mu * (1 - mu);
-        const z = eta + (y - n * mu) / w;
+        const z = e + (y - n * mu) / w;
         return { w, z, mu };
       },
       // 2[ y log(y / n mu) + (n-y) log((n-y) / (n - n mu)) ]
@@ -57,8 +58,9 @@
     poisson: {
       linkinv: (eta) => Math.exp(eta),
       irls(eta, y) {
-        const mu = Math.max(1e-10, Math.exp(eta));
-        return { w: mu, z: eta + (y - mu) / mu, mu };
+        const e = Math.max(-30, Math.min(30, eta));
+        const mu = Math.max(1e-10, Math.exp(e));
+        return { w: mu, z: e + (y - mu) / mu, mu };
       },
       // 2[ y log(y/mu) - (y - mu) ]
       dev(y, mu) {
@@ -251,6 +253,10 @@
     const theta = res.x;
     const U = buildU(n, factors, theta);
     const fitp = pirls(y, X, U, fam, trials, opts.maxIter);
+    if (!fitp) { // non-convergence: report an honest "uninformative" fit
+      const sd = factors.map((_, k) => Math.exp(theta[k]));
+      return { beta: 0, se: Infinity, z: 0, p: 1, effect: 0, betas: [], ses: [], varComps: { sd, groupSD: sd[0], olreSD: factors.length > 1 ? sd[1] : null }, family, nGroups: factors[0].nLevels, converged: false };
+    }
 
     // Fixed-effect covariance = beta block of (Xa' W Xa + P)^-1.
     const { Xa, w, q, m, p } = fitp;
@@ -300,6 +306,7 @@
     for (let i = 0; i < n; i++) X.push([1].concat(preds.map((c) => c[i])));
     const U = Array.from({ length: n }, () => []); // q = 0
     const fitp = pirls(y, X, U, fam, trials, opts.maxIter);
+    if (!fitp) return { betas: [], ses: [], converged: false };
     const { Xa, w, m } = fitp;
     const M = zeros(m, m);
     for (let i = 0; i < n; i++) {

@@ -368,6 +368,8 @@
     if (tool.needsChoice === 'control') return chooseFromList('Add a Covariate', App.state.level.candidateControls.concat([{ id: null, label: 'None (remove covariate)' }]), (o) => doTool('add-control', { var: o.id }));
     if (tool.needsChoice === 'prior') return chooseFromList('Set Cauchy Prior Width (r)', PRIOR_OPTS, (o) => doTool('set-prior', { r: o.r }));
     if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
+    if (tool.needsChoice === 'df') return chooseFromList('Choose Degrees of Freedom', [{ id: 'finite', label: 'Finite (Satterthwaite / between-within)' }, { id: 'z', label: 'Wald z (infinite df)' }], (o) => doTool('choose-df', { method: o.id }));
+    if (tool.needsChoice === 'glmm') return chooseFromList('Choose the Model Family', [{ id: 'gaussian', label: 'Gaussian LMM (normal errors)' }, { id: 'binomial', label: 'Logistic GLMM (binomial)' }, { id: 'poisson', label: 'Poisson GLMM' }, { id: 'poisson-olre', label: 'Poisson GLMM + observation-level RE' }], (o) => doTool('fit-glmm', o.id === 'poisson-olre' ? { family: 'poisson', olre: true } : { family: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }

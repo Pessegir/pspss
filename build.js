@@ -7,8 +7,8 @@ const path = require('path');
 
 const SRC = path.join(__dirname, 'src');
 const ORDER = [
-  'stats.js', 'lmm.js', 'bayes.js', 'rng.js',
-  'levels.js', 'levels.c2.js', 'levels.c3.js', 'levels.c4.js', 'campaigns.js',
+  'stats.js', 'lmm.js', 'glmm.js', 'bayes.js', 'rng.js',
+  'levels.js', 'levels.c2.js', 'levels.c3.js', 'levels.c4.js', 'levels.c5.js', 'campaigns.js',
   'engine.js', 'charts.js', 'knowledge.js', 'content.js', 'ui.js',
 ];
 

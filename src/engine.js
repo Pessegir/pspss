@@ -61,7 +61,7 @@
       // --- Campaign 5 (mixed-model masterclass) flags ---
       dfMethod: level.defaultDf || 'finite', // 'finite' (Satterthwaite/BW) | 'z' (naive Wald)
       glmmFamily: level.defaultFamily || 'gaussian', // 'gaussian' | 'binomial' | 'poisson'
-      glmmOLRE: false, // observation-level random effect (overdispersion)
+      glmmOLRE: level.defaultOLRE || false, // observation-level random effect (overdispersion)
       moves: 0,
       suspicion: 0,
       log: [],

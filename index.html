@@ -1116,6 +1116,350 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 })(typeof self !== 'undefined' ? self : this);
 
 
+// ===================== glmm.js =====================
+/*
+ * PSPSS generalized linear mixed model engine — a genuine Laplace-approximation GLMM.
+ *
+ * Supports the binomial (logit) and Poisson (log) families with one or more scalar
+ * random-intercept grouping factors. The second factor is typically an
+ * observation-level random effect (OLRE) used to model overdispersion. Fixed-effect
+ * inference uses the Wald z statistic. Variance components are estimated by
+ * minimising the Laplace-approximated deviance with the LMM module's Nelder-Mead.
+ *
+ * This is Campaign 5's "generalized" engine: fitting a Gaussian LMM where a logistic
+ * GLMM is required, or ignoring overdispersion, is the QRP — so this must be correct.
+ * Verified by src/glmm.test.js against the lme4 `cbpp` glmer anchor, exact
+ * saturated-model log-odds / log-rate anchors, and the OLRE SE-inflation property.
+ *
+ * Method: for given variance components theta, a penalised IRLS (PIRLS) inner loop
+ * finds the joint conditional modes of the fixed effects beta and the spherical
+ * random effects u; the Laplace approximation to the marginal deviance is then
+ *   d(theta) = deviance(mu) + ||u||^2 + log|U'WU + I|
+ * minimised over theta. The fixed-effect covariance is the beta-block of the inverse
+ * joint penalised Hessian (X_a' W X_a + P)^-1.
+ *
+ * Works in Node (module.exports) and the browser (window.PSPSS_glmm).
+ */
+(function (root) {
+  'use strict';
+
+  const Stats = typeof require !== 'undefined' ? require('./stats') : root.Stats;
+  const LMM = typeof require !== 'undefined' ? require('./lmm') : root.PSPSS_lmm;
+
+  const cholesky = LMM.cholesky;
+  const cholSolve = LMM.cholSolve;
+  const nelderMead = LMM.nelderMead;
+
+  // ---- families ------------------------------------------------------------
+  // linkinv(eta) -> mu (success probability for binomial, mean for Poisson);
+  // irls(eta, y, n) -> { w, z, mu } working weight / response for the IRLS step
+  // (n = binomial trials, ignored by Poisson); dev(y, mu, n) -> unit deviance.
+  const FAMILIES = {
+    binomial: {
+      linkinv: (eta) => 1 / (1 + Math.exp(-eta)),
+      irls(eta, y, n) {
+        const e = Math.max(-30, Math.min(30, eta));
+        let mu = 1 / (1 + Math.exp(-e));
+        mu = Math.min(1 - 1e-10, Math.max(1e-10, mu));
+        const w = n * mu * (1 - mu);
+        const z = e + (y - n * mu) / w;
+        return { w, z, mu };
+      },
+      // 2[ y log(y / n mu) + (n-y) log((n-y) / (n - n mu)) ]
+      dev(y, mu, n) {
+        const m = n * mu;
+        let d = 0;
+        if (y > 0) d += y * Math.log(y / m);
+        if (y < n) d += (n - y) * Math.log((n - y) / (n - m));
+        return 2 * d;
+      },
+    },
+    poisson: {
+      linkinv: (eta) => Math.exp(eta),
+      irls(eta, y) {
+        const e = Math.max(-30, Math.min(30, eta));
+        const mu = Math.max(1e-10, Math.exp(e));
+        return { w: mu, z: e + (y - mu) / mu, mu };
+      },
+      // 2[ y log(y/mu) - (y - mu) ]
+      dev(y, mu) {
+        let d = mu - y;
+        if (y > 0) d += y * Math.log(y / mu);
+        return 2 * d;
+      },
+    },
+  };
+
+  // ---- small dense linear algebra ------------------------------------------
+
+  function zeros(r, c) {
+    return Array.from({ length: r }, () => new Array(c).fill(0));
+  }
+
+  // Inverse of a symmetric positive-definite matrix via Cholesky back-substitution.
+  function inverseSPD(M) {
+    const L = cholesky(M);
+    if (!L) return null;
+    const m = M.length;
+    const inv = zeros(m, m);
+    for (let c = 0; c < m; c++) {
+      const e = new Array(m).fill(0);
+      e[c] = 1;
+      const col = cholSolve(L, e);
+      for (let r = 0; r < m; r++) inv[r][c] = col[r];
+    }
+    return inv;
+  }
+
+  function logDetSPD(M) {
+    const L = cholesky(M);
+    if (!L) return null;
+    let s = 0;
+    for (let i = 0; i < L.length; i++) s += Math.log(L[i][i]);
+    return 2 * s;
+  }
+
+  // ---- random-effect structure --------------------------------------------
+
+  // Map arbitrary group ids -> 0..k-1 contiguous level indices.
+  function makeFactor(ids) {
+    const map = new Map();
+    const levelOf = new Array(ids.length);
+    let k = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (!map.has(id)) map.set(id, k++);
+      levelOf[i] = map.get(id);
+    }
+    return { levelOf, nLevels: k };
+  }
+
+  // U = Z * Lambda(theta): the n x q design for the spherical random effects, with
+  // each factor's columns scaled by its standard deviation tau = exp(theta_f).
+  function buildU(n, factors, theta) {
+    const offsets = [];
+    let q = 0;
+    for (const f of factors) { offsets.push(q); q += f.nLevels; }
+    const U = Array.from({ length: n }, () => new Array(q).fill(0));
+    factors.forEach((f, fi) => {
+      const tau = Math.exp(theta[fi]);
+      for (let i = 0; i < n; i++) U[i][offsets[fi] + f.levelOf[i]] = tau;
+    });
+    return U;
+  }
+
+  // ---- penalised IRLS (the Laplace inner loop) -----------------------------
+
+  // Jointly solves for the spherical random effects u and the fixed effects beta at
+  // fixed variance components (encoded in U). Returns consistent final mu/w/dev.
+  function pirls(y, X, U, fam, trials, maxIter) {
+    const n = y.length;
+    const p = X[0].length;
+    const q = U.length && U[0] ? U[0].length : 0;
+    const m = q + p;
+    const Xa = [];
+    for (let i = 0; i < n; i++) {
+      const row = new Array(m);
+      for (let j = 0; j < q; j++) row[j] = U[i][j];
+      for (let j = 0; j < p; j++) row[q + j] = X[i][j];
+      Xa.push(row);
+    }
+    let coef = new Array(m).fill(0);
+    const muArr = new Array(n);
+    const wArr = new Array(n);
+    let prevDev = Infinity;
+    const iters = maxIter || 60;
+    for (let it = 0; it < iters; it++) {
+      const z = new Array(n);
+      let dev = 0;
+      for (let i = 0; i < n; i++) {
+        let e = 0;
+        for (let j = 0; j < m; j++) e += Xa[i][j] * coef[j];
+        const r = fam.irls(e, y[i], trials ? trials[i] : 1);
+        wArr[i] = r.w; muArr[i] = r.mu; z[i] = r.z;
+        dev += fam.dev(y[i], r.mu, trials ? trials[i] : 1);
+      }
+      // M = Xa' W Xa + P (ridge of 1 on the u block); rhs = Xa' W z
+      const M = zeros(m, m);
+      const rhs = new Array(m).fill(0);
+      for (let i = 0; i < n; i++) {
+        const wi = wArr[i], zi = z[i], xi = Xa[i];
+        for (let a = 0; a < m; a++) {
+          const xa = xi[a];
+          if (xa === 0) continue;
+          rhs[a] += xa * wi * zi;
+          for (let b = a; b < m; b++) M[a][b] += xa * wi * xi[b];
+        }
+      }
+      for (let a = 0; a < m; a++) for (let b = a + 1; b < m; b++) M[b][a] = M[a][b];
+      for (let j = 0; j < q; j++) M[j][j] += 1;
+      const L = cholesky(M);
+      if (!L) return null;
+      coef = cholSolve(L, rhs);
+      if (it > 0 && Math.abs(prevDev - dev) < 1e-9 * (Math.abs(dev) + 0.1)) { prevDev = dev; break; }
+      prevDev = dev;
+    }
+    // Final consistent recompute at the converged coefficients.
+    let dev = 0;
+    for (let i = 0; i < n; i++) {
+      let e = 0;
+      for (let j = 0; j < m; j++) e += Xa[i][j] * coef[j];
+      const r = fam.irls(e, y[i], trials ? trials[i] : 1);
+      wArr[i] = r.w; muArr[i] = r.mu;
+      dev += fam.dev(y[i], r.mu, trials ? trials[i] : 1);
+    }
+    return { beta: coef.slice(q), u: coef.slice(0, q), mu: muArr, w: wArr, dev, Xa, m, q, p };
+  }
+
+  // Laplace-approximated deviance for the current theta (via the fitted PIRLS).
+  function laplaceDeviance(fitp, U) {
+    const n = fitp.w.length;
+    const q = fitp.q;
+    if (q === 0) return fitp.dev;
+    // B = U' W U + I_q
+    const B = zeros(q, q);
+    for (let i = 0; i < n; i++) {
+      const wi = fitp.w[i], ui = U[i];
+      for (let a = 0; a < q; a++) {
+        const ua = ui[a];
+        if (ua === 0) continue;
+        for (let b = a; b < q; b++) B[a][b] += ua * wi * ui[b];
+      }
+    }
+    for (let a = 0; a < q; a++) { for (let b = a + 1; b < q; b++) B[b][a] = B[a][b]; B[a][a] += 1; }
+    const ld = logDetSPD(B);
+    if (ld == null) return 1e18;
+    let uu = 0;
+    for (let j = 0; j < q; j++) uu += fitp.u[j] * fitp.u[j];
+    return fitp.dev + uu + ld;
+  }
+
+  // ---- public fit ----------------------------------------------------------
+
+  // fit(y, predictors, groups, opts)
+  //   y          : number[] (successes for binomial, counts for Poisson)
+  //   predictors : array of columns (NOT incl intercept); intercept added automatically
+  //   groups     : integer/string cluster id per row (the random grouping factor)
+  //   opts.family   : 'binomial' (default) | 'poisson'
+  //   opts.trials   : binomial denominators per row (default 1 = Bernoulli)
+  //   opts.olre     : add an observation-level random effect (overdispersion)
+  //   opts.testCol  : index into predictors of the fixed effect to test (default last)
+  // returns { beta, se, z, p, effect, betas, ses, varComps, family, nGroups }
+  function fit(y, predictors, groups, opts) {
+    opts = opts || {};
+    const family = opts.family || 'binomial';
+    const fam = FAMILIES[family];
+    const n = y.length;
+    const trials = opts.trials || null;
+    const preds = predictors || [];
+    const X = [];
+    for (let i = 0; i < n; i++) X.push([1].concat(preds.map((c) => c[i])));
+
+    const factors = [makeFactor(groups)];
+    if (opts.olre) factors.push(makeFactor(y.map((_, i) => i)));
+
+    const objective = (theta) => {
+      const U = buildU(n, factors, theta);
+      const fitp = pirls(y, X, U, fam, trials, opts.maxIter);
+      if (!fitp) return 1e18;
+      return laplaceDeviance(fitp, U);
+    };
+    const theta0 = factors.map(() => 0); // tau = 1
+    const res = factors.length === 1
+      ? line1D(objective)
+      : nelderMead(objective, theta0, { maxIter: 400, tol: 1e-8 });
+
+    const theta = res.x;
+    const U = buildU(n, factors, theta);
+    const fitp = pirls(y, X, U, fam, trials, opts.maxIter);
+    if (!fitp) { // non-convergence: report an honest "uninformative" fit
+      const sd = factors.map((_, k) => Math.exp(theta[k]));
+      return { beta: 0, se: Infinity, z: 0, p: 1, effect: 0, betas: [], ses: [], varComps: { sd, groupSD: sd[0], olreSD: factors.length > 1 ? sd[1] : null }, family, nGroups: factors[0].nLevels, converged: false };
+    }
+
+    // Fixed-effect covariance = beta block of (Xa' W Xa + P)^-1.
+    const { Xa, w, q, m, p } = fitp;
+    const M = zeros(m, m);
+    for (let i = 0; i < n; i++) {
+      const wi = w[i], xi = Xa[i];
+      for (let a = 0; a < m; a++) {
+        const xa = xi[a];
+        if (xa === 0) continue;
+        for (let b = a; b < m; b++) M[a][b] += xa * wi * xi[b];
+      }
+    }
+    for (let a = 0; a < m; a++) for (let b = a + 1; b < m; b++) M[b][a] = M[a][b];
+    for (let j = 0; j < q; j++) M[j][j] += 1;
+    const inv = inverseSPD(M);
+    const ses = fitp.beta.map((_, j) => Math.sqrt(Math.max(0, inv[q + j][q + j])));
+
+    const testCol = (opts.testCol != null ? opts.testCol : preds.length - 1) + 1; // +1 intercept
+    const beta = fitp.beta[testCol];
+    const se = ses[testCol];
+    const z = beta / se;
+    const sd = factors.map((_, k) => Math.exp(theta[k]));
+
+    return {
+      beta,
+      se,
+      z,
+      p: Stats.normalTwoTailedP(z),
+      effect: beta,
+      betas: fitp.beta,
+      ses,
+      varComps: { sd, groupSD: sd[0], olreSD: factors.length > 1 ? sd[1] : null },
+      family,
+      nGroups: factors[0].nLevels,
+      testCol: testCol - 1,
+    };
+  }
+
+  // Plain GLM (no random effects) — exposed for validation against exact anchors.
+  function glm(y, predictors, opts) {
+    opts = opts || {};
+    const fam = FAMILIES[opts.family || 'binomial'];
+    const n = y.length;
+    const trials = opts.trials || null;
+    const preds = predictors || [];
+    const X = [];
+    for (let i = 0; i < n; i++) X.push([1].concat(preds.map((c) => c[i])));
+    const U = Array.from({ length: n }, () => []); // q = 0
+    const fitp = pirls(y, X, U, fam, trials, opts.maxIter);
+    if (!fitp) return { betas: [], ses: [], converged: false };
+    const { Xa, w, m } = fitp;
+    const M = zeros(m, m);
+    for (let i = 0; i < n; i++) {
+      const wi = w[i], xi = Xa[i];
+      for (let a = 0; a < m; a++) for (let b = a; b < m; b++) M[a][b] += xi[a] * wi * xi[b];
+    }
+    for (let a = 0; a < m; a++) for (let b = a + 1; b < m; b++) M[b][a] = M[a][b];
+    const inv = inverseSPD(M);
+    return { betas: fitp.beta, ses: fitp.beta.map((_, j) => Math.sqrt(Math.max(0, inv[j][j]))) };
+  }
+
+  // Robust 1-D minimiser for the single-variance case (golden-section on log-tau),
+  // more reliable than Nelder-Mead on a degenerate 1-simplex.
+  function line1D(f) {
+    let lo = -6, hi = 3; // tau in [~0.0025, ~20]
+    const gr = (Math.sqrt(5) - 1) / 2;
+    let c = hi - gr * (hi - lo);
+    let d = lo + gr * (hi - lo);
+    let fc = f([c]), fd = f([d]);
+    for (let i = 0; i < 80; i++) {
+      if (fc < fd) { hi = d; d = c; fd = fc; c = hi - gr * (hi - lo); fc = f([c]); }
+      else { lo = c; c = d; fc = fd; d = lo + gr * (hi - lo); fd = f([d]); }
+      if (hi - lo < 1e-6) break;
+    }
+    const x = fc < fd ? c : d;
+    return { x: [x], f: Math.min(fc, fd) };
+  }
+
+  const api = { fit, glm, FAMILIES, makeFactor, buildU, pirls };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PSPSS_glmm = api;
+})(typeof self !== 'undefined' ? self : this);
+
+
 // ===================== bayes.js =====================
 /*
  * PSPSS Bayesian engine — genuine JZS Bayes factors for t-tests
@@ -2275,6 +2619,366 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 })(typeof self !== 'undefined' ? self : this);
 
 
+// ===================== levels.c5.js =====================
+/*
+ * Campaign 5 — "Mixed Signals". A (generalized) linear mixed model masterclass.
+ * Re-teaches the C2 mixed-model pitfalls harder, then goes deep into the ones the
+ * literature stresses most: naive degrees of freedom, within/between conflation,
+ * clustering at the wrong level, and (Phase 3) genuinely generalized models —
+ * Gaussian-on-binary and ignored overdispersion — capped by a forking-paths boss.
+ *
+ * Each level carries its own evaluate(state, ctx) running a genuine analysis via
+ * ctx.Stats / ctx.LMM / ctx.GLMM. Registered onto PSPSS_levels.LEVELS.
+ * Proven solvable at par by src/levels.verify.js; seeds from src/tune-seeds.c5.js.
+ */
+(function (root) {
+  'use strict';
+
+  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
+  const makeRNG = RNGlib.RNG;
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const groupArrays = (rows) => { const A = [], B = []; rows.forEach((r) => (r.group === 'A' ? A : B).push(r.vals.primary)); return { A, B }; };
+
+  const LEVELS = [
+    // ----------------------------------------------------------- pseudoreplication (harder)
+    {
+      id: 'pseudo-redux', campaign: 'c5', title: 'One Mouse, Eight Pretend Mice',
+      rank: 'Returning PI', design: 'clustered', flaw: 'pseudoreplication',
+      par: 1, seed: 308, predictedHigher: 'B',
+      defaultMethod: 'lmm',
+      tests: [
+        { id: 'lmm', label: 'Mixed model (random intercept: animal)' },
+        { id: 'ols', label: 't-test on every cell (ignore animal)' },
+      ],
+      hypothesis: 'The treated animals (B) score higher than the controls (A).',
+      brief: 'Six mice per group, eight cells measured from each. The mixed model counts six independent mice and shrugs. The t-test counts forty-eight gloriously "independent" cells and believes.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (const g of ['A', 'B']) {
+          for (let a = 0; a < 6; a++) {
+            const animal = rng.normal(0, 5) + (g === 'B' ? 2.1 : 0); // modest animal-level lift
+            for (let c = 0; c < 8; c++) obs.push({ subject: subj, group: g, y: 50 + animal + rng.normal(0, 4) });
+            subj++;
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const A = [], B = [];
+        state.observations.forEach((d) => (d.group === 'A' ? A : B).push(d.y));
+        const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
+        if (state.method === 'ols') {
+          const r = ctx.Stats.tTestIndependent(A, B, false);
+          return { testName: 't-test on every cell (ignores animal)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: A.length + B.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
+        }
+        const o = ctx.obsArrays(state);
+        const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
+        return { testName: 'Mixed model (random intercept: animal)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+      },
+    },
+
+    // ----------------------------------------------------------- random slopes (harder)
+    {
+      id: 'slopes-redux', campaign: 'c5', title: 'Everyone Learns Identically, Surely',
+      rank: 'Relapsed Psycholinguist', design: 'clustered', flaw: 'random-slopes',
+      par: 1, seed: 42, predictedHigher: 'B',
+      defaultMethod: 'lmm', defaultLmm: 'max', lmm: true,
+      hypothesis: 'Scores increase across sessions — a positive average slope of Time.',
+      brief: 'Fourteen learners, fourteen different trajectories. The maximal model lets each person have their own slope and finds your average unconvincing. Pretend the slopes are identical and the standard error melts away.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        for (let s = 0; s < 14; s++) {
+          const b0 = rng.normal(0, 6);
+          const b1 = rng.normal(0, 2.8); // large by-subject slope variance
+          for (let t = 0; t < 5; t++) obs.push({ subject: s, time: t, y: 50 + b0 + (0.3 + b1) * t + rng.normal(0, 3) });
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const time = o.get('time');
+        const useSlope = state.lmmStructure === 'max';
+        const fit = ctx.LMM.fit(o.y, [time], o.subject, { randomSlope: useSlope ? time : null, testCol: 0 });
+        return { testName: useSlope ? 'Mixed model (random slope: Time)' : 'Mixed model (random intercept only)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups: { 'Time slope': fit.effect }, higher: fit.effect >= 0 ? 'B' : 'A' };
+      },
+    },
+
+    // ----------------------------------------------------------- naive degrees of freedom
+    {
+      id: 'naive-df', campaign: 'c5', title: 'Infinite Degrees of Freedom',
+      rank: 'Asymptotically Optimistic', design: 'clustered', flaw: 'naive-df',
+      par: 1, seed: 301, predictedHigher: 'B',
+      dfTestable: true, defaultDf: 'finite',
+      hypothesis: 'Group B clusters score higher than Group A clusters.',
+      brief: 'Eight clusters. Eighty rows. lme4 politely declines to print a p-value, because with this few clusters the degrees of freedom are small and uncertain. Override it with the Wald z — infinite df — and the asterisk appears.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (const g of ['A', 'B']) {
+          for (let a = 0; a < 4; a++) { // 4 clusters per group = 8 clusters
+            const clusterEff = rng.normal(0, 6) + (g === 'B' ? 3.0 : 0);
+            for (let k = 0; k < 10; k++) obs.push({ subject: subj, group: g, y: 50 + clusterEff + rng.normal(0, 5) });
+            subj++;
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const A = [], B = [];
+        state.observations.forEach((d) => (d.group === 'A' ? A : B).push(d.y));
+        const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
+        const o = ctx.obsArrays(state);
+        const fit = ctx.LMM.fit(o.y, [o.group], o.subject);
+        const higher = fit.effect >= 0 ? 'B' : 'A';
+        if (state.dfMethod === 'z') {
+          return { testName: 'Mixed model — Wald z (df = ∞)', statLabel: 'z', statistic: fit.t, df: Infinity, p: ctx.Stats.normalTwoTailedP(fit.t), n: o.y.length, groups, higher, aArr: A, bArr: B };
+        }
+        return { testName: 'Mixed model — finite df ≈ ' + fit.df, statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher, aArr: A, bArr: B };
+      },
+    },
+
+    // ----------------------------------------------------------- within/between conflation
+    {
+      id: 'within-between', campaign: 'c5', title: 'Within, Between, Whatever',
+      rank: 'Multilevel Opportunist', design: 'clustered', flaw: 'within-between-conflation',
+      par: 1, seed: 2483, predictedHigher: 'B',
+      aggregable: true,
+      hypothesis: 'More practice hours (x) predict higher performance (y) — a positive relationship.',
+      brief: 'Pupil by pupil, within each school, more practice predicts slightly LOWER scores. But schools that practice more score higher overall. Conflate the two levels — regress on school means — and the within-pupil truth politely disappears.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        const nClusters = 6, per = 10;
+        // Between schools Y rises with X; within schools a negative slope cancels it
+        // in the pooled data (Simpson). Aggregating to school means recovers only the
+        // confounded between-effect.
+        for (let c = 0; c < nClusters; c++) {
+          const Xc = 10 + c * 4;
+          const Yc = 40 + 2 * Xc;
+          for (let k = 0; k < per; k++) {
+            const x = Xc + rng.normal(0, 11);
+            const y = Yc - 0.77 * (x - Xc) + rng.normal(0, 4);
+            obs.push({ subject: c, x, y });
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const obs = state.observations;
+        if (state.aggregated) {
+          const ids = [...new Set(obs.map((o) => o.subject))];
+          const mx = ids.map((id) => mean(obs.filter((o) => o.subject === id).map((o) => o.x)));
+          const my = ids.map((id) => mean(obs.filter((o) => o.subject === id).map((o) => o.y)));
+          const r = ctx.Stats.pearson(mx, my);
+          return { testName: 'Regression on school means (between only)', statLabel: 'r', statistic: r.r, df: r.df, p: r.p, n: ids.length, groups: { 'r (between)': r.r }, higher: r.r >= 0 ? 'B' : 'A' };
+        }
+        const r = ctx.Stats.pearson(obs.map((o) => o.x), obs.map((o) => o.y));
+        return { testName: 'Regression on all pupils (pooled)', statLabel: 'r', statistic: r.r, df: r.df, p: r.p, n: obs.length, groups: { 'r (pooled)': r.r }, higher: r.r >= 0 ? 'B' : 'A' };
+      },
+    },
+
+    // ----------------------------------------------------------- wrong clustering level
+    {
+      id: 'wrong-level', campaign: 'c5', title: 'Cluster at the Convenient Level',
+      rank: 'Nesting Enthusiast', design: 'clustered', flaw: 'wrong-random-level',
+      par: 1, seed: 246, predictedHigher: 'B',
+      defaultMethod: 'lmm-patient',
+      tests: [
+        { id: 'lmm-patient', label: 'Mixed model (random intercept: patient)' },
+        { id: 'lmm-clinic', label: 'Mixed model (random intercept: clinic)' },
+        { id: 'ols', label: 't-test on all visits (ignore nesting)' },
+      ],
+      hypothesis: 'Patients on treatment B improve more than those on A.',
+      brief: 'Patients are nested in clinics, with several visits each. The dependence that matters is between VISITS of a patient. Cluster by clinic instead and every repeated visit counts as fresh evidence — the right random effect at the wrong level.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let pid = 0;
+        for (let clinic = 0; clinic < 4; clinic++) {
+          for (let pInC = 0; pInC < 4; pInC++) {
+            const group = pid % 2 === 0 ? 'A' : 'B';
+            const patientEff = rng.normal(0, 7); // strong between-patient variation
+            for (let visit = 0; visit < 5; visit++) {
+              obs.push({ subject: pid, patient: pid, clinic: clinic, group, y: 50 + patientEff + rng.normal(0, 3) });
+            }
+            pid++;
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const rows = state.observations;
+        const A = [], B = [];
+        rows.forEach((d) => (d.group === 'A' ? A : B).push(d.y));
+        const groups = { 'Mean A': mean(A), 'Mean B': mean(B) };
+        const m = state.method || 'lmm-patient';
+        if (m === 'ols') {
+          const r = ctx.Stats.tTestIndependent(A, B, false);
+          return { testName: 't-test on all visits (ignores nesting)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: rows.length, groups, higher: mean(B) >= mean(A) ? 'B' : 'A', aArr: A, bArr: B };
+        }
+        const o = ctx.obsArrays(state);
+        if (m === 'lmm-clinic') {
+          const clinic = rows.map((d) => d.clinic);
+          const fit = ctx.LMM.fit(o.y, [o.group], clinic);
+          return { testName: 'Mixed model (random intercept: clinic)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: rows.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+        }
+        const patient = rows.map((d) => d.patient);
+        const fit = ctx.LMM.fit(o.y, [o.group], patient);
+        return { testName: 'Mixed model (random intercept: patient)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: rows.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+      },
+    },
+
+    // ----------------------------------------------------------- clustered binary (logistic GLMM)
+    {
+      id: 'glmm-binary', campaign: 'c5', title: 'Pool Every Yes and No',
+      rank: 'Logistic Enthusiast', design: 'clustered', flaw: 'clustered-binary',
+      par: 1, seed: 93, predictedHigher: 'B',
+      defaultMethod: 'glmm-logistic',
+      tests: [
+        { id: 'glmm-logistic', label: 'Logistic GLMM (random intercept: subject)' },
+        { id: 'glm-logistic', label: 'Logistic regression (pooled — ignore subject)' },
+      ],
+      hypothesis: 'Patients on B are more likely to respond (a binary 0/1 outcome) than on A.',
+      brief: 'The outcome is yes/no, measured six times per patient — and patients differ wildly in their baseline odds. The logistic mixed model accounts for that and is unconvinced. Pour every trial into one pooled logistic regression, as if each were an independent patient, and the standard error shrinks to fit your hopes.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (const g of ['A', 'B']) {
+          for (let s = 0; s < 10; s++) {
+            const re = rng.normal(0, 1.3); // large between-subject spread (logit scale)
+            const base = g === 'B' ? -0.7 : -1.2;
+            for (let t = 0; t < 6; t++) {
+              const pr = 1 / (1 + Math.exp(-(base + re)));
+              obs.push({ subject: subj, group: g, y: rng.next() < pr ? 1 : 0 });
+            }
+            subj++;
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const A = [], B = [];
+        state.observations.forEach((d) => (d.group === 'A' ? A : B).push(d.y));
+        const groups = { 'P(resp) A': mean(A), 'P(resp) B': mean(B) };
+        if (state.method === 'glm-logistic') {
+          const r = ctx.GLMM.glm(o.y, [o.group], { family: 'binomial' });
+          const z = r.betas.length ? r.betas[1] / r.ses[1] : 0;
+          return { testName: 'Logistic regression (pooled, ignores subject)', statLabel: 'z', statistic: z, df: Infinity, p: ctx.Stats.normalTwoTailedP(z), n: o.y.length, groups, higher: z >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+        }
+        const fit = ctx.GLMM.fit(o.y, [o.group], o.subject, { family: 'binomial' });
+        return { testName: 'Logistic GLMM (random intercept: subject)', statLabel: 'z', statistic: fit.z, df: Infinity, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+      },
+    },
+
+    // ----------------------------------------------------------- ignored overdispersion (GLMM)
+    {
+      id: 'glmm-overdispersion', campaign: 'c5', title: 'Overdispersed and Overconfident',
+      rank: 'Poisson True Believer', design: 'clustered', flaw: 'overdispersion-ignored',
+      par: 1, seed: 34, predictedHigher: 'B',
+      glmm: true, defaultFamily: 'poisson', defaultOLRE: true,
+      hypothesis: 'Higher dose (within subject) predicts higher counts — a positive dose slope.',
+      brief: 'Counts, measured across five doses within each subject — and far more variable than a Poisson allows. The honest fix is an observation-level random effect for the overdispersion, which keeps the standard error wide. Drop it, trust the raw Poisson, and the variance you ignored becomes significance you keep.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (let s = 0; s < 16; s++) {
+          const re = rng.normal(0, 0.4); // subject random intercept
+          for (let dose = 0; dose < 5; dose++) {
+            const od = rng.normal(0, 0.9); // observation-level overdispersion
+            const lam = Math.exp(1.2 + 0.1 * dose + re + od);
+            let k = 0, L = Math.exp(-lam), pr = 1;
+            do { k++; pr *= rng.next(); } while (pr > L);
+            obs.push({ subject: subj, dose: dose, y: k - 1 });
+          }
+          subj++;
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const dose = o.get('dose');
+        // QRP = plain Poisson (no OLRE); honest/default = Poisson + OLRE.
+        const olre = !(state.glmmFamily === 'poisson' && state.glmmOLRE === false);
+        const fit = ctx.GLMM.fit(o.y, [dose], o.subject, { family: 'poisson', olre });
+        const lbl = olre ? 'Poisson GLMM + observation-level RE (overdispersion modelled)' : 'Plain Poisson GLMM (overdispersion ignored)';
+        return { testName: lbl, statLabel: 'z', statistic: fit.z, df: Infinity, p: fit.p, n: o.y.length, groups: { 'Dose slope (log)': fit.effect }, higher: fit.effect >= 0 ? 'B' : 'A' };
+      },
+    },
+
+    // ----------------------------------------------------------- forking-paths capstone
+    {
+      id: 'forking-models', campaign: 'c5', title: 'The Garden of Forking Models',
+      rank: 'Tenured, Somehow', design: 'clustered', flaw: 'forking-paths',
+      par: 2, seed: 47, predictedHigher: 'B',
+      defaultMethod: 'lmm', defaultLmm: 'max', lmm: true, dfTestable: true, defaultDf: 'finite',
+      hypothesis: 'Scores increase across sessions — a positive average slope of Time.',
+      brief: 'One honest model says nothing. But there is a garden of forking paths, and significance hides at the end of exactly one. No single fork is enough — drop the random slope AND adopt the infinite-df Wald test, and only together do they bloom. Find the path; the arsenal is full of dead ends.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        for (let s = 0; s < 9; s++) {
+          const b0 = rng.normal(0, 6);
+          const b1 = rng.normal(0, 2.4); // by-subject slope variance
+          for (let t = 0; t < 5; t++) obs.push({ subject: s, time: t, y: 50 + b0 + (0.55 + b1) * t + rng.normal(0, 3) });
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const time = o.get('time');
+        const useSlope = state.lmmStructure === 'max';
+        const fit = ctx.LMM.fit(o.y, [time], o.subject, { randomSlope: useSlope ? time : null, testCol: 0 });
+        const higher = fit.effect >= 0 ? 'B' : 'A';
+        const groups = { 'Time slope': fit.effect };
+        if (state.dfMethod === 'z') {
+          return { testName: 'Mixed model (' + (useSlope ? 'max' : 'RI') + ') — Wald z (df = ∞)', statLabel: 'z', statistic: fit.t, df: Infinity, p: ctx.Stats.normalTwoTailedP(fit.t), n: o.y.length, groups, higher };
+        }
+        return { testName: 'Mixed model (' + (useSlope ? 'max' : 'RI') + ') — finite df ≈ ' + fit.df, statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher };
+      },
+    },
+  ];
+
+  // Campaign 5, like C2/C3, exposes the FULL arsenal on every level: the player must
+  // DIAGNOSE the mixed-model flaw and pick the right (wrong) analysis, not click the
+  // only button. Generic decoy knobs make every flag-based tool appear; each level's
+  // evaluate() honours only its own flag, so non-matching tools are inert. Levels are
+  // proven solvable-at-par with the intended option among the winners (levels.verify).
+  const ALL_QRP = ['choose-test', 'fit-lmm', 'choose-df', 'fit-glmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
+  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
+  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
+  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
+  // Levels whose "effect" is a manufactured false positive (no real data-generating effect).
+  const FALSE_POSITIVE = { 'pseudo-redux': 1, 'within-between': 1, 'wrong-level': 1 };
+  LEVELS.forEach((l) => {
+    if (l.lmm === undefined) l.lmm = true;
+    if (l.dfTestable === undefined) l.dfTestable = true;
+    if (l.glmm === undefined) l.glmm = true;
+    if (l.moderator === undefined) l.moderator = 'mod';
+    if (l.aggregable === undefined) l.aggregable = true;
+    if (l.tests === undefined) l.tests = GENERIC_TESTS;
+    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
+    if (l.specs === undefined) l.specs = GENERIC_SPECS;
+    l.allowedTools = ALL_QRP;
+    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
+  });
+
+  // register onto the shared LEVELS array
+  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
+  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
+
+  const api = { C5_LEVELS: LEVELS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PSPSS_levels_c5 = api;
+})(typeof self !== 'undefined' ? self : this);
+
+
 // ===================== campaigns.js =====================
 /*
  * Campaign grouping + gated unlock metadata. The flat level registry stays in
@@ -2309,6 +3013,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       subtitle: 'The redemption arc. Stop chasing significance; reach a conclusion you can defend.',
       levelIds: ['sign-here-first', 'powered-up', 'all-of-them', 'absence-of-evidence', 'whole-garden', 'the-replication'],
     },
+    {
+      id: 'c5',
+      name: 'Campaign 5 — Mixed Signals',
+      subtitle: 'A (generalized) mixed-model masterclass. Random effects, fixed conclusions.',
+      levelIds: ['pseudo-redux', 'slopes-redux', 'naive-df', 'within-between', 'wrong-level', 'glmm-binary', 'glmm-overdispersion', 'forking-models'],
+    },
   ];
 
   const api = { CAMPAIGNS };
@@ -2328,11 +3038,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
   const Stats = typeof require !== 'undefined' ? require('./stats') : root.Stats;
   const LMM = typeof require !== 'undefined' ? require('./lmm') : root.PSPSS_lmm;
+  const GLMM = typeof require !== 'undefined' ? require('./glmm') : root.PSPSS_glmm;
   const Bayes = typeof require !== 'undefined' ? require('./bayes') : root.PSPSS_bayes;
 
   // Context handed to a level's custom evaluate(state, ctx) — keeps each puzzle's
   // statistical logic self-contained while reusing the real engines.
-  const CTX = { Stats, LMM, Bayes, getArrays, obsArrays };
+  const CTX = { Stats, LMM, GLMM, Bayes, getArrays, obsArrays };
 
   // --- state ----------------------------------------------------------------
 
@@ -2377,6 +3088,10 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       corrected: null, // 'bonferroni' | 'bh'
       tostResult: null, // equivalence-test result
       multivReported: false, // honest specification-curve report
+      // --- Campaign 5 (mixed-model masterclass) flags ---
+      dfMethod: level.defaultDf || 'finite', // 'finite' (Satterthwaite/BW) | 'z' (naive Wald)
+      glmmFamily: level.defaultFamily || 'gaussian', // 'gaussian' | 'binomial' | 'poisson'
+      glmmOLRE: level.defaultOLRE || false, // observation-level random effect (overdispersion)
       moves: 0,
       suspicion: 0,
       log: [],
@@ -3238,6 +3953,44 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         return { message: `Reported all ${state.level.specs.length} specifications: ${sig} significant. You let the reader see the whole garden of forking paths, not just the prettiest flower.` };
       },
     },
+
+    // ====================== Campaign 5 (mixed-model masterclass) tools ======================
+    // QRPs specific to (generalized) linear mixed models. Each sets a generic flag
+    // the level's evaluate() reads; honoured only where the level wires that flaw.
+    {
+      id: 'choose-df',
+      label: 'Choose Degrees of Freedom…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 12,
+      needsChoice: 'df',
+      enabled: (s) => !!s.level.dfTestable,
+      run(state, payload) {
+        const m = (payload && payload.method) || 'finite';
+        if (m === state.dfMethod) return { message: 'Degrees of freedom unchanged.', free: true };
+        state.dfMethod = m;
+        return { message: m === 'z'
+          ? 'Switched to the naive Wald z test — infinite degrees of freedom. With this many rows, who needs Satterthwaite?'
+          : 'Back to the finite-sample (between-within) df. The honest, smaller number that knows you only have a handful of clusters.' };
+      },
+    },
+    {
+      id: 'fit-glmm',
+      label: 'Choose the Model Family…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 12,
+      needsChoice: 'glmm',
+      enabled: (s) => !!s.level.glmm,
+      run(state, payload) {
+        const fam = (payload && payload.family) || 'gaussian';
+        state.glmmFamily = fam;
+        state.glmmOLRE = !!(payload && payload.olre);
+        const labels = {
+          gaussian: 'a Gaussian LMM (normal errors)',
+          binomial: 'a logistic (binomial) GLMM',
+          poisson: 'a Poisson GLMM' + (state.glmmOLRE ? ' with an observation-level random effect' : ''),
+        };
+        return { message: 'Fitted ' + (labels[fam] || fam) + '.' +
+          (fam === 'gaussian' ? ' Normal errors on this outcome — brave.' : state.glmmOLRE ? ' Overdispersion, honestly modelled.' : '') };
+      },
+    },
   ];
 
   function id(p) {
@@ -3843,6 +4596,61 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       antidote: 'Preregister, power for the original effect, report whatever you find.',
       verdict: 'honest',
     },
+    // ---- Campaign 5: the mixed-model masterclass ----
+    'naive-df': {
+      term: 'Naive degrees of freedom in a mixed model',
+      plain: 'Using the Wald z (infinite df) for a fixed effect instead of a finite small-sample df.',
+      harm: 'With few clusters the reference distribution has small, uncertain df; the z test is anticonservative — which is exactly why lme4 refuses to print a p-value.',
+      citation: 'Luke (2017), Behavior Research Methods; Kuznetsova et al. (2017), lmerTest.',
+      realCase: 'Reporting naive z/χ² p-values from lme4 with a handful of clusters is rife in applied work.',
+      antidote: 'Use Satterthwaite or Kenward-Roger df (lmerTest/pbkrtest), or a parametric bootstrap.',
+      verdict: 'invalid',
+    },
+    'within-between-conflation': {
+      term: 'Within/between conflation (no centering)',
+      plain: 'Letting a level-1 predictor blend its within-cluster and between-cluster slopes, then reading off the convenient one.',
+      harm: 'The two slopes can differ in size or even sign (Simpson’s paradox); a conflated estimate can support the opposite of the within-cluster truth.',
+      citation: 'Enders & Tofighi (2007), Psychological Methods; Snijders & Bosker (2012).',
+      realCase: 'Aggregating to cluster means routinely manufactures a "between" effect the individuals never show.',
+      antidote: 'Group-mean-center the level-1 predictor and add the cluster mean as a level-2 term.',
+      verdict: 'invalid',
+    },
+    'wrong-random-level': {
+      term: 'Clustering at the wrong level',
+      plain: 'Putting the random intercept on a coarse grouping (clinic) when the dependence lives at a finer one (patient/visit).',
+      harm: 'Repeated measurements of the same unit stay correlated; modelling the wrong level leaves that correlation in the residual and shrinks the SE.',
+      citation: 'Aarts et al. (2014), Nature Neuroscience; Lazic (2010), BMC Neuroscience.',
+      realCase: 'Nesting visits-in-patients-in-clinics and then clustering only by clinic is a common multilevel slip.',
+      antidote: 'Put the random effect at the level the observations actually repeat within (or model every level).',
+      verdict: 'invalid',
+    },
+    'clustered-binary': {
+      term: 'Pooled logistic on clustered binary data',
+      plain: 'Pooling repeated yes/no trials into one logistic regression, ignoring that they came from the same subjects.',
+      harm: 'Positive intra-subject correlation means the trials are not independent; pooling underestimates the SE and inflates significance — pseudoreplication on the logit scale.',
+      citation: 'Jaeger (2008), JML (logit mixed models); Bolker et al. (2009), TREE.',
+      realCase: 'Trial-level logistic regressions without a by-subject random effect are still common in psychology.',
+      antidote: 'Fit a logistic GLMM with a random intercept (and slopes) for subject.',
+      verdict: 'invalid',
+    },
+    'overdispersion-ignored': {
+      term: 'Ignoring overdispersion',
+      plain: 'Trusting a plain Poisson GLMM whose counts vary far more than the mean=variance assumption allows.',
+      harm: 'Unmodelled overdispersion makes every fixed-effect SE too small, so confidence intervals are too narrow and p-values too small.',
+      citation: 'Harrison (2014), PeerJ (observation-level random effects); Bolker et al. (2009).',
+      realCase: 'Count data in ecology/medicine are routinely overdispersed; raw Poisson SEs are then optimistic.',
+      antidote: 'Add an observation-level random effect, or use a negative-binomial / quasi-Poisson model; check the dispersion.',
+      verdict: 'invalid',
+    },
+    'forking-paths': {
+      term: 'The garden of forking mixed models',
+      plain: 'Stacking several individually-weak mixed-model choices (drop the slope AND use naive df) until significance appears.',
+      harm: 'Each modelling choice is a fork; combined and undisclosed they push the real false-positive rate far above 5%.',
+      citation: 'Forstmeier, Wagenmakers & Parker (2017), Biological Reviews; Gelman & Loken (2013).',
+      realCase: 'Real analyses rarely use one QRP — convergence "fixes" and df choices accumulate quietly.',
+      antidote: 'Preregister the random-effects structure and inference method; report every analytic branch.',
+      verdict: 'invalid',
+    },
   };
 
   // Short "what you did" label per tool id, for the debrief's action list.
@@ -3875,6 +4683,9 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     'correct-comparisons': 'corrected for multiple comparisons',
     'equivalence-test': 'ran an equivalence test (TOST)',
     'report-multiverse': 'reported the full specification curve',
+    // Campaign 5 — the mixed-model masterclass
+    'choose-df': 'swapped to infinite-df Wald inference',
+    'fit-glmm': 'chose the model family that obliged',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
@@ -4071,6 +4882,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       cite: 'The multiverse exists to be reported transparently — not cherry-picked (Steegen et al., 2016; Simonsohn et al., specification curve).',
     },
 
+    // ---- Campaign 5 (mixed-model masterclass) ----
+    'choose-df': {
+      tip: 'The finite df is small and shy. The Wald z has infinite df and no shame.',
+      cite: 'With few clusters, naive z/χ² p-values are anticonservative — use Satterthwaite/Kenward-Roger (Luke, 2017; lmerTest).',
+    },
+    'fit-glmm': {
+      tip: 'Pick the family that fits your outcome — or the one that fits your hopes.',
+      cite: 'Wrong family / ignored overdispersion gives optimistic SEs (Bolker et al., 2009; Harrison, 2014).',
+    },
+
     // ---- Campaign 3 (Bayesian) ----
     'plot-bf-robustness': { tip: 'BF as a function of the prior. Find the flattering corner.' },
     'set-prior': {
@@ -4115,6 +4936,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     fabricate: 'Become legend. Become retracted. 🎲',
     'choose-test': 'Roll the test dice until you win. 🎰',
     'fit-lmm': 'Slopes? In THIS economy? 📉',
+    'choose-df': 'Infinite degrees of freedom, baby. ♾️',
+    'fit-glmm': 'Pick the distribution that vibes. 🎲',
     'median-split': 'Snap the variable in half. 🔪',
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',
@@ -4597,6 +5420,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     if (tool.needsChoice === 'control') return chooseFromList('Add a Covariate', App.state.level.candidateControls.concat([{ id: null, label: 'None (remove covariate)' }]), (o) => doTool('add-control', { var: o.id }));
     if (tool.needsChoice === 'prior') return chooseFromList('Set Cauchy Prior Width (r)', PRIOR_OPTS, (o) => doTool('set-prior', { r: o.r }));
     if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
+    if (tool.needsChoice === 'df') return chooseFromList('Choose Degrees of Freedom', [{ id: 'finite', label: 'Finite (Satterthwaite / between-within)' }, { id: 'z', label: 'Wald z (infinite df)' }], (o) => doTool('choose-df', { method: o.id }));
+    if (tool.needsChoice === 'glmm') return chooseFromList('Choose the Model Family', [{ id: 'gaussian', label: 'Gaussian LMM (normal errors)' }, { id: 'binomial', label: 'Logistic GLMM (binomial)' }, { id: 'poisson', label: 'Poisson GLMM' }, { id: 'poisson-olre', label: 'Poisson GLMM + observation-level RE' }], (o) => doTool('fit-glmm', o.id === 'poisson-olre' ? { family: 'poisson', olre: true } : { family: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }

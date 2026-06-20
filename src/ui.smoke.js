@@ -58,6 +58,7 @@ store['pspss_progress'] = JSON.stringify(ALL.reduce((o, id) => ((o[id] = { done:
 
 global.Stats = require('./stats');
 global.PSPSS_lmm = require('./lmm');
+global.PSPSS_glmm = require('./glmm');
 global.PSPSS_bayes = require('./bayes');
 global.PSPSS_rng = require('./rng');
 global.RNG = global.PSPSS_rng.RNG;
@@ -65,6 +66,7 @@ global.PSPSS_levels = require('./levels');
 require('./levels.c2');
 require('./levels.c3');
 require('./levels.c4');
+require('./levels.c5');
 global.PSPSS_campaigns = require('./campaigns');
 global.PSPSS_engine = require('./engine');
 global.PSPSS_charts = require('./charts');

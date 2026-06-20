@@ -31,6 +31,12 @@
       subtitle: 'The redemption arc. Stop chasing significance; reach a conclusion you can defend.',
       levelIds: ['sign-here-first', 'powered-up', 'all-of-them', 'absence-of-evidence', 'whole-garden', 'the-replication'],
     },
+    {
+      id: 'c5',
+      name: 'Campaign 5 — Mixed Signals',
+      subtitle: 'A (generalized) mixed-model masterclass. Random effects, fixed conclusions.',
+      levelIds: ['pseudo-redux', 'slopes-redux', 'naive-df', 'within-between', 'wrong-level', 'glmm-binary', 'glmm-overdispersion', 'forking-models'],
+    },
   ];
 
   const api = { CAMPAIGNS };

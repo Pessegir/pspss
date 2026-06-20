@@ -209,6 +209,118 @@
         return { testName: 'Mixed model (random intercept: patient)', statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: rows.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
       },
     },
+
+    // ----------------------------------------------------------- clustered binary (logistic GLMM)
+    {
+      id: 'glmm-binary', campaign: 'c5', title: 'Pool Every Yes and No',
+      rank: 'Logistic Enthusiast', design: 'clustered', flaw: 'clustered-binary',
+      par: 1, seed: 93, predictedHigher: 'B',
+      defaultMethod: 'glmm-logistic',
+      tests: [
+        { id: 'glmm-logistic', label: 'Logistic GLMM (random intercept: subject)' },
+        { id: 'glm-logistic', label: 'Logistic regression (pooled — ignore subject)' },
+      ],
+      hypothesis: 'Patients on B are more likely to respond (a binary 0/1 outcome) than on A.',
+      brief: 'The outcome is yes/no, measured six times per patient — and patients differ wildly in their baseline odds. The logistic mixed model accounts for that and is unconvinced. Pour every trial into one pooled logistic regression, as if each were an independent patient, and the standard error shrinks to fit your hopes.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (const g of ['A', 'B']) {
+          for (let s = 0; s < 10; s++) {
+            const re = rng.normal(0, 1.3); // large between-subject spread (logit scale)
+            const base = g === 'B' ? -0.7 : -1.2;
+            for (let t = 0; t < 6; t++) {
+              const pr = 1 / (1 + Math.exp(-(base + re)));
+              obs.push({ subject: subj, group: g, y: rng.next() < pr ? 1 : 0 });
+            }
+            subj++;
+          }
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const A = [], B = [];
+        state.observations.forEach((d) => (d.group === 'A' ? A : B).push(d.y));
+        const groups = { 'P(resp) A': mean(A), 'P(resp) B': mean(B) };
+        if (state.method === 'glm-logistic') {
+          const r = ctx.GLMM.glm(o.y, [o.group], { family: 'binomial' });
+          const z = r.betas.length ? r.betas[1] / r.ses[1] : 0;
+          return { testName: 'Logistic regression (pooled, ignores subject)', statLabel: 'z', statistic: z, df: Infinity, p: ctx.Stats.normalTwoTailedP(z), n: o.y.length, groups, higher: z >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+        }
+        const fit = ctx.GLMM.fit(o.y, [o.group], o.subject, { family: 'binomial' });
+        return { testName: 'Logistic GLMM (random intercept: subject)', statLabel: 'z', statistic: fit.z, df: Infinity, p: fit.p, n: o.y.length, groups, higher: fit.effect >= 0 ? 'B' : 'A', aArr: A, bArr: B };
+      },
+    },
+
+    // ----------------------------------------------------------- ignored overdispersion (GLMM)
+    {
+      id: 'glmm-overdispersion', campaign: 'c5', title: 'Overdispersed and Overconfident',
+      rank: 'Poisson True Believer', design: 'clustered', flaw: 'overdispersion-ignored',
+      par: 1, seed: 34, predictedHigher: 'B',
+      glmm: true, defaultFamily: 'poisson', defaultOLRE: true,
+      hypothesis: 'Higher dose (within subject) predicts higher counts — a positive dose slope.',
+      brief: 'Counts, measured across five doses within each subject — and far more variable than a Poisson allows. The honest fix is an observation-level random effect for the overdispersion, which keeps the standard error wide. Drop it, trust the raw Poisson, and the variance you ignored becomes significance you keep.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        let subj = 0;
+        for (let s = 0; s < 16; s++) {
+          const re = rng.normal(0, 0.4); // subject random intercept
+          for (let dose = 0; dose < 5; dose++) {
+            const od = rng.normal(0, 0.9); // observation-level overdispersion
+            const lam = Math.exp(1.2 + 0.1 * dose + re + od);
+            let k = 0, L = Math.exp(-lam), pr = 1;
+            do { k++; pr *= rng.next(); } while (pr > L);
+            obs.push({ subject: subj, dose: dose, y: k - 1 });
+          }
+          subj++;
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const dose = o.get('dose');
+        // QRP = plain Poisson (no OLRE); honest/default = Poisson + OLRE.
+        const olre = !(state.glmmFamily === 'poisson' && state.glmmOLRE === false);
+        const fit = ctx.GLMM.fit(o.y, [dose], o.subject, { family: 'poisson', olre });
+        const lbl = olre ? 'Poisson GLMM + observation-level RE (overdispersion modelled)' : 'Plain Poisson GLMM (overdispersion ignored)';
+        return { testName: lbl, statLabel: 'z', statistic: fit.z, df: Infinity, p: fit.p, n: o.y.length, groups: { 'Dose slope (log)': fit.effect }, higher: fit.effect >= 0 ? 'B' : 'A' };
+      },
+    },
+
+    // ----------------------------------------------------------- forking-paths capstone
+    {
+      id: 'forking-models', campaign: 'c5', title: 'The Garden of Forking Models',
+      rank: 'Tenured, Somehow', design: 'clustered', flaw: 'forking-paths',
+      par: 2, seed: 47, predictedHigher: 'B',
+      defaultMethod: 'lmm', defaultLmm: 'max', lmm: true, dfTestable: true, defaultDf: 'finite',
+      hypothesis: 'Scores increase across sessions — a positive average slope of Time.',
+      brief: 'One honest model says nothing. But there is a garden of forking paths, and significance hides at the end of exactly one. No single fork is enough — drop the random slope AND adopt the infinite-df Wald test, and only together do they bloom. Find the path; the arsenal is full of dead ends.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const obs = [];
+        for (let s = 0; s < 9; s++) {
+          const b0 = rng.normal(0, 6);
+          const b1 = rng.normal(0, 2.4); // by-subject slope variance
+          for (let t = 0; t < 5; t++) obs.push({ subject: s, time: t, y: 50 + b0 + (0.55 + b1) * t + rng.normal(0, 3) });
+        }
+        return { observations: obs };
+      },
+      evaluate(state, ctx) {
+        const o = ctx.obsArrays(state);
+        const time = o.get('time');
+        const useSlope = state.lmmStructure === 'max';
+        const fit = ctx.LMM.fit(o.y, [time], o.subject, { randomSlope: useSlope ? time : null, testCol: 0 });
+        const higher = fit.effect >= 0 ? 'B' : 'A';
+        const groups = { 'Time slope': fit.effect };
+        if (state.dfMethod === 'z') {
+          return { testName: 'Mixed model (' + (useSlope ? 'max' : 'RI') + ') — Wald z (df = ∞)', statLabel: 'z', statistic: fit.t, df: Infinity, p: ctx.Stats.normalTwoTailedP(fit.t), n: o.y.length, groups, higher };
+        }
+        return { testName: 'Mixed model (' + (useSlope ? 'max' : 'RI') + ') — finite df ≈ ' + fit.df, statLabel: 't', statistic: fit.t, df: fit.df, p: fit.p, n: o.y.length, groups, higher };
+      },
+    },
   ];
 
   // Campaign 5, like C2/C3, exposes the FULL arsenal on every level: the player must

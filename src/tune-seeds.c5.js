@@ -14,8 +14,15 @@ const SOLUTIONS = {
   'naive-df': [{ id: 'choose-df', payload: { method: 'z' } }],
   'within-between': [{ id: 'set-aggregation' }],
   'wrong-level': [{ id: 'choose-test', payload: { method: 'lmm-clinic' } }],
+  'glmm-binary': [{ id: 'choose-test', payload: { method: 'glm-logistic' } }],
+  'glmm-overdispersion': [{ id: 'fit-glmm', payload: { family: 'poisson', olre: false } }],
+  'forking-models': [{ id: 'fit-lmm', payload: { structure: 'ri' } }, { id: 'choose-df', payload: { method: 'z' } }],
 };
-const MAXSEED = { 'pseudo-redux': 400, 'slopes-redux': 300, 'naive-df': 400, 'wrong-level': 300, 'within-between': 3000 };
+// the capstone must require BOTH moves: neither single fork may win alone.
+const CHAIN_SINGLES = {
+  'forking-models': [[{ id: 'fit-lmm', payload: { structure: 'ri' } }], [{ id: 'choose-df', payload: { method: 'z' } }]],
+};
+const MAXSEED = { 'pseudo-redux': 400, 'slopes-redux': 300, 'naive-df': 400, 'wrong-level': 300, 'within-between': 3000, 'glmm-binary': 200, 'glmm-overdispersion': 200, 'forking-models': 300 };
 
 function runSeq(level, seed, seq) {
   const state = E.newState(level, seed, 'tenure'); let a = E.analyze(state);
@@ -26,6 +33,13 @@ function runSeq(level, seed, seq) {
 function score(level, seed) {
   const raw = E.analyze(E.newState(level, seed, 'tenure'));
   if (raw.win) return null;
+  // a chain capstone: every single fork must FAIL on its own.
+  if (CHAIN_SINGLES[level.id]) {
+    for (const single of CHAIN_SINGLES[level.id]) {
+      const one = runSeq(level, seed, single);
+      if (one.error || one.analysis.win) return null;
+    }
+  }
   const sol = runSeq(level, seed, SOLUTIONS[level.id]);
   if (sol.error || !sol.analysis.win) return null;
   let s = 0.05 - sol.analysis.metricValue;
