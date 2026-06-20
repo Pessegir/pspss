@@ -12,6 +12,7 @@
 require('./levels.c2');
 require('./levels.c3');
 require('./levels.c4');
+require('./levels.c5');
 const { LEVELS } = require('./levels');
 const E = require('./engine');
 
@@ -50,6 +51,12 @@ const SOLUTIONS = {
   'absence-of-evidence': [{ id: 'equivalence-test' }],
   'whole-garden': [{ id: 'report-multiverse' }],
   'the-replication': [{ id: 'preregister' }, { id: 'power-analysis' }, { id: 'collect-to-power' }],
+  // Campaign 5 — the mixed-model masterclass
+  'pseudo-redux': [{ id: 'choose-test', payload: { method: 'ols' } }],
+  'slopes-redux': [{ id: 'fit-lmm', payload: { structure: 'ri' } }],
+  'naive-df': [{ id: 'choose-df', payload: { method: 'z' } }],
+  'within-between': [{ id: 'set-aggregation' }],
+  'wrong-level': [{ id: 'choose-test', payload: { method: 'lmm-clinic' } }],
 };
 const HONEST_TOOLS = ['preregister', 'power-analysis', 'collect-to-power', 'correct-comparisons', 'equivalence-test', 'report-multiverse'];
 
@@ -58,6 +65,8 @@ const INTENDED = {
   pseudoreplication: 'choose-test:ols', 'wrong-test': 'choose-test:student',
   'random-slopes': 'fit-lmm:ri', 'two-kinds': 'median-split', collider: 'add-control:engagement',
   simpson: 'set-aggregation', 'spec-curve': 'spec-multiverse', 'outcome-switch': 'pick-outcome:dv4',
+  'pseudo-redux': 'choose-test:ols', 'slopes-redux': 'fit-lmm:ri', 'naive-df': 'choose-df:z',
+  'within-between': 'set-aggregation', 'wrong-level': 'choose-test:lmm-clinic',
 };
 
 const ALTERNATES = { outlier: [[{ id: 'robustness-check' }], [{ id: 'winsorize' }]], skew: [[{ id: 'robustness-check' }]] };
@@ -94,6 +103,8 @@ function enumOptions(level) {
     if (!tool || !E.toolEnabled(s0, tool)) return;
     if (tid === 'choose-test') (level.tests || []).forEach((t) => opts.push({ id: 'choose-test', payload: { method: t.id }, label: 'choose-test:' + t.id }));
     else if (tid === 'fit-lmm') ['ri', 'max'].forEach((st) => opts.push({ id: 'fit-lmm', payload: { structure: st }, label: 'fit-lmm:' + st }));
+    else if (tid === 'choose-df') ['finite', 'z'].forEach((mth) => opts.push({ id: 'choose-df', payload: { method: mth }, label: 'choose-df:' + mth }));
+    else if (tid === 'fit-glmm') [{ family: 'gaussian' }, { family: 'binomial' }, { family: 'poisson' }, { family: 'poisson', olre: true }].forEach((pl) => opts.push({ id: 'fit-glmm', payload: pl, label: 'fit-glmm:' + pl.family + (pl.olre ? '+olre' : '') }));
     else if (tid === 'add-control') (level.candidateControls || []).forEach((c) => opts.push({ id: 'add-control', payload: { var: c.id }, label: 'add-control:' + c.id }));
     else if (tid === 'pick-outcome') s0.dvNames.forEach((dv) => opts.push({ id: 'pick-outcome', payload: { dv }, label: 'pick-outcome:' + dv }));
     else if (tid === 'correct-comparisons') ['bonferroni', 'bh'].forEach((mth) => opts.push({ id: 'correct-comparisons', payload: { method: mth }, label: 'correct-comparisons:' + mth }));
@@ -133,7 +144,7 @@ for (const level of LEVELS) {
   // Campaign 2/3 full-arsenal: every offered tool must apply without error; the
   // intended option must be among the winners; a trap must have NO winner. Extra
   // winners are allowed (alternate p-hacks are realistic) and just reported.
-  if (level.campaign === 'c2' || level.campaign === 'c3' || level.campaign === 'c4') {
+  if (level.campaign === 'c2' || level.campaign === 'c3' || level.campaign === 'c4' || level.campaign === 'c5') {
     const opts = enumOptions(level);
     const winners = [];
     let errored = 0;
@@ -147,6 +158,7 @@ for (const level of LEVELS) {
     if (level.campaign === 'c2' && isTrap) check('no offered option wins (trap)', winners.length === 0, 'winners=' + JSON.stringify(winners));
     else if (level.campaign === 'c2') check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
     else if (level.campaign === 'c4') check('only HONEST tools can win (QRPs lose)', winners.every((w) => HONEST_TOOLS.indexOf(w.split(':')[0]) >= 0), 'winners=' + JSON.stringify(winners));
+    else if (level.campaign === 'c5' && INTENDED[level.id]) check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
     console.log(`     (full arsenal: ${opts.length} clickable options, ${winners.length} win — ${winners.join(', ') || 'none via single move'})`);
   }
 

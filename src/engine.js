@@ -8,11 +8,12 @@
 
   const Stats = typeof require !== 'undefined' ? require('./stats') : root.Stats;
   const LMM = typeof require !== 'undefined' ? require('./lmm') : root.PSPSS_lmm;
+  const GLMM = typeof require !== 'undefined' ? require('./glmm') : root.PSPSS_glmm;
   const Bayes = typeof require !== 'undefined' ? require('./bayes') : root.PSPSS_bayes;
 
   // Context handed to a level's custom evaluate(state, ctx) — keeps each puzzle's
   // statistical logic self-contained while reusing the real engines.
-  const CTX = { Stats, LMM, Bayes, getArrays, obsArrays };
+  const CTX = { Stats, LMM, GLMM, Bayes, getArrays, obsArrays };
 
   // --- state ----------------------------------------------------------------
 
@@ -57,6 +58,10 @@
       corrected: null, // 'bonferroni' | 'bh'
       tostResult: null, // equivalence-test result
       multivReported: false, // honest specification-curve report
+      // --- Campaign 5 (mixed-model masterclass) flags ---
+      dfMethod: level.defaultDf || 'finite', // 'finite' (Satterthwaite/BW) | 'z' (naive Wald)
+      glmmFamily: level.defaultFamily || 'gaussian', // 'gaussian' | 'binomial' | 'poisson'
+      glmmOLRE: false, // observation-level random effect (overdispersion)
       moves: 0,
       suspicion: 0,
       log: [],
@@ -916,6 +921,44 @@
         state.specIndex = null;
         state.multivReported = true;
         return { message: `Reported all ${state.level.specs.length} specifications: ${sig} significant. You let the reader see the whole garden of forking paths, not just the prettiest flower.` };
+      },
+    },
+
+    // ====================== Campaign 5 (mixed-model masterclass) tools ======================
+    // QRPs specific to (generalized) linear mixed models. Each sets a generic flag
+    // the level's evaluate() reads; honoured only where the level wires that flaw.
+    {
+      id: 'choose-df',
+      label: 'Choose Degrees of Freedom…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 12,
+      needsChoice: 'df',
+      enabled: (s) => !!s.level.dfTestable,
+      run(state, payload) {
+        const m = (payload && payload.method) || 'finite';
+        if (m === state.dfMethod) return { message: 'Degrees of freedom unchanged.', free: true };
+        state.dfMethod = m;
+        return { message: m === 'z'
+          ? 'Switched to the naive Wald z test — infinite degrees of freedom. With this many rows, who needs Satterthwaite?'
+          : 'Back to the finite-sample (between-within) df. The honest, smaller number that knows you only have a handful of clusters.' };
+      },
+    },
+    {
+      id: 'fit-glmm',
+      label: 'Choose the Model Family…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 12,
+      needsChoice: 'glmm',
+      enabled: (s) => !!s.level.glmm,
+      run(state, payload) {
+        const fam = (payload && payload.family) || 'gaussian';
+        state.glmmFamily = fam;
+        state.glmmOLRE = !!(payload && payload.olre);
+        const labels = {
+          gaussian: 'a Gaussian LMM (normal errors)',
+          binomial: 'a logistic (binomial) GLMM',
+          poisson: 'a Poisson GLMM' + (state.glmmOLRE ? ' with an observation-level random effect' : ''),
+        };
+        return { message: 'Fitted ' + (labels[fam] || fam) + '.' +
+          (fam === 'gaussian' ? ' Normal errors on this outcome — brave.' : state.glmmOLRE ? ' Overdispersion, honestly modelled.' : '') };
       },
     },
   ];

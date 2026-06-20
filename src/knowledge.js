@@ -319,6 +319,9 @@
     'correct-comparisons': 'corrected for multiple comparisons',
     'equivalence-test': 'ran an equivalence test (TOST)',
     'report-multiverse': 'reported the full specification curve',
+    // Campaign 5 — the mixed-model masterclass
+    'choose-df': 'swapped to infinite-df Wald inference',
+    'fit-glmm': 'chose the model family that obliged',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
