@@ -21,6 +21,14 @@ real literature — that's the joke, and the lesson.
   report the full **specification curve**, and run a **preregistered replication**. The whole QRP
   arsenal is still on the menu and still tempting — but it raises suspicion and *loses*. Only the
   honest method wins.
+- **Campaign 5 — Mixed Signals:** a *(generalized) mixed-model masterclass*. Re-teaches
+  pseudoreplication and dropping random slopes at higher difficulty, then goes deep into the
+  pitfalls the literature stresses most — **naive degrees of freedom** (Wald z instead of
+  Satterthwaite), **within/between conflation** (Simpson on multilevel data), **clustering at the
+  wrong level**, **pooling clustered binary data** into one logistic regression, and **ignoring
+  overdispersion** in a Poisson model — capped by a **forking-paths** boss that needs two compounding
+  exploits at once. Powered by a genuine **GLMM** engine (logistic & Poisson, Laplace approximation),
+  validated against lme4's `cbpp` fit.
 
 Campaigns unlock in order. See [DESIGN.md](DESIGN.md) for the full design.
 

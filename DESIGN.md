@@ -8,7 +8,7 @@ but the ball is scientific integrity.
 ## Pillars
 
 1. **The stats are real.** Every p-value / Bayes factor comes from a genuine engine
-   (`stats.js`, `lmm.js`, `bayes.js`). Diagnostics are meaningful; minimal solutions are discoverable.
+   (`stats.js`, `lmm.js`, `glmm.js`, `bayes.js`). Diagnostics are meaningful; minimal solutions are discoverable.
 2. **Fewest moves = the puzzle.** Each level has a *par*; beating it rewards *elegant* p-hacking.
 3. **Every tool is a real QRP** with a euphemistic label and an honest tooltip (with citations in
    Tenure Track mode).
@@ -45,6 +45,11 @@ never hardcodes "p", so the Bayes factor (C3) slots in without engine surgery. `
 - **C3 — In Bayes We Trust (8):** metric = JZS Bayes factor (Rouder 2009). Prior width, optional
   stopping, one-sided priors, BF₀₁ relabelling, "robustness" prior-shopping, a capstone needing two
   stacked nudges, and a default-prior trap.
+- **C5 — Mixed Signals (8):** a *(generalized) mixed-model masterclass* (see below). Re-teaches
+  pseudoreplication and random-slope dropping harder, then naive df (Wald z vs Satterthwaite; Luke
+  2017), within/between conflation (Enders & Tofighi 2007), clustering at the wrong level (Aarts 2014),
+  pooled logistic on clustered binary (Jaeger 2008), ignored overdispersion (Harrison 2014), and a
+  forking-paths capstone. Full arsenal on every level + two new tools (`choose-df`, `fit-glmm`).
 
 Campaigns unlock in order (gated by clearing the previous one).
 
@@ -63,6 +68,17 @@ equivalence testing (TOST), the honest specification curve, and preregistered re
 QRP arsenal is present and tempting but always loses (it raises suspicion). A **Meta-Science Lab**
 (p-curve, funnel/publication-bias, power, equivalence) gives the reviewer's view. The whole game is
 colour-independent, keyboard-navigable, ARIA-labelled, responsive, with optional sound.
+
+## Campaign 5 — Mixed Signals (the (generalized) mixed-model masterclass)
+
+C5 returns to torture-to-significance but stays inside one family of methods — (generalized) linear
+mixed models — and makes every level a real riddle over the full arsenal. It ships a genuine **GLMM
+engine** (`glmm.js`): binomial(logit) and Poisson(log) with scalar random intercept(s) and an optional
+observation-level random effect for overdispersion, fit by a penalised-IRLS Laplace approximation and
+Wald-z inference. It is **not faked** — `glmm.test.js` pins it to the published lme4 `cbpp` glmer fit,
+to exact saturated-model log-odds/log-rate anchors, and to the OLRE SE-inflation property. The
+capstone, *The Garden of Forking Models*, only yields p<.05 when you drop the random slope **and**
+switch to the infinite-df Wald test — neither fork alone is enough.
 
 ## Educational layer
 
