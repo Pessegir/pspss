@@ -252,3 +252,27 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 .quiz-scenario { background: #f3f1ea; border-left: 3px solid #3b6ea5; padding: 10px 12px; margin: 8px 0; font-style: italic; line-height: 1.5; }
 .quiz-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 6px 0; }
 .quiz-opt { font-size: 12px; display: flex; align-items: center; gap: 5px; padding: 3px 6px; cursor: pointer; }
+
+/* ---- Accessibility & polish ---- */
+/* colour-independent status badge on the metric card */
+.statusbadge { font-size: 11px; font-weight: 700; margin-top: 4px; display: inline-block; }
+#stat-p .statusbadge { color: #b91c1c; }
+#stat-p.sig .statusbadge { color: #15803d; }
+/* visible keyboard focus everywhere */
+:focus-visible { outline: 3px solid #2563eb; outline-offset: 1px; }
+.menu-label:focus-visible, .item:focus-visible, .levelcard:focus-visible { outline: 3px solid #2563eb; outline-offset: -2px; }
+/* sound toggle */
+.snd-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; }
+
+/* responsive: stack panes and wrap bars on narrow screens / phones */
+@media (max-width: 1000px) {
+  #app { max-width: 100%; height: auto; min-height: 100vh; }
+  .main { grid-template-columns: 1fr; }
+  .statstrip { grid-template-columns: 1fr 1fr; }
+  .menubar { flex-wrap: wrap; }
+  .pane-body { max-height: 60vh; }
+  .levelgrid { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr 1fr; }
+  .quiz-opts, .ach-list { grid-template-columns: 1fr; }
+  button.btn { padding: 9px 14px; }
+}

@@ -54,6 +54,16 @@ Campaigns unlock in order (gated by clearing the previous one).
   non-significant and the game congratulates your integrity while your career dies.
 - **Replication Crisis epilogue:** high-suspicion papers fail to replicate years later.
 
+## Campaign 4 — Open Science (the redemption arc)
+
+The capstone inverts the game: the win is no longer p<.05 but a **defensible conclusion**
+(`objective:'honest'`, judged by `decisionWin` = the right honest method + zero suspicion). Six
+levels teach the antidotes — preregistration, a-priori power, multiple-comparison correction,
+equivalence testing (TOST), the honest specification curve, and preregistered replication. The full
+QRP arsenal is present and tempting but always loses (it raises suspicion). A **Meta-Science Lab**
+(p-curve, funnel/publication-bias, power, equivalence) gives the reviewer's view. The whole game is
+colour-independent, keyboard-navigable, ARIA-labelled, responsive, with optional sound.
+
 ## Educational layer
 
 The game rewards skilled p-hacking so it can then indict it. Each level declares its data-generating

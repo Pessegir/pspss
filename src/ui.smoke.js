@@ -193,6 +193,15 @@ uinp.value = 'trending toward significance'; clickBtn('Unlock');
 check('correct password unlocks all campaigns', store['pspss_unlock'] === '1');
 check('start screen now offers re-lock', q('a').filter((n) => n.textContent.includes('Re-lock')).length > 0);
 
+console.log('\nAccessibility:');
+card('The One Bad Apple').fire('click');
+check('modal has role=dialog', (q('.modal')[0] || {}).attrs && q('.modal')[0].attrs.role === 'dialog');
+clickBtn('Begin Analysis');
+check('stat card exposes a text status token (✓/✗), not colour only', /✓|✗/.test(document.querySelector('#stat-p').textContent));
+check('menu labels are focusable (tabindex)', q('.menu-label').some((n) => n.attrs.tabindex === '0'));
+document.fire('keydown'); // smoke: global keydown handler registered without throwing
+clickItem('Exit to Campaign');
+
 console.log('\nMode toggle:');
 q('.mode-pill')[0].fire('click');
 check('mode pill toggled without error', true);

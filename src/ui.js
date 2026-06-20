@@ -57,6 +57,7 @@
     achievements: loadAch(),
     career: loadCareer(),
     unlocked: loadUnlock(),
+    sound: loadSound(),
   };
 
   function load() {
@@ -65,6 +66,28 @@
   }
   function loadUnlock() { try { return localStorage.getItem('pspss_unlock') === '1'; } catch (e) { return false; } }
   function saveUnlock() { try { localStorage.setItem('pspss_unlock', App.unlocked ? '1' : '0'); } catch (e) {} }
+  function loadSound() { try { return localStorage.getItem('pspss_sound') === '1'; } catch (e) { return false; } }
+  // optional WebAudio sfx (off by default; no-op in headless/Node)
+  let _actx = null;
+  function beep(freq, dur, type) {
+    if (!App.sound) return;
+    try {
+      const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+      if (!AC) return;
+      _actx = _actx || new AC();
+      const o = _actx.createOscillator(), g = _actx.createGain();
+      o.type = type || 'sine'; o.frequency.value = freq; o.connect(g); g.connect(_actx.destination);
+      g.gain.setValueAtTime(0.07, _actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, _actx.currentTime + dur);
+      o.start(); o.stop(_actx.currentTime + dur);
+    } catch (e) {}
+  }
+  function sfx(kind) {
+    if (kind === 'move') beep(washTone(), 0.05);
+    else if (kind === 'win') { beep(523, 0.12); setTimeout(() => beep(784, 0.18), 90); }
+    else if (kind === 'bad') beep(130, 0.32, 'sawtooth');
+  }
+  function washTone() { return 380 + Math.random() * 120; }
   function loadAch() { try { return JSON.parse(localStorage.getItem('pspss_ach') || '[]'); } catch (e) { return []; } }
   function loadCareer() {
     const d = { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 };
@@ -96,6 +119,12 @@
     pre.appendChild(cb);
     pre.appendChild(document.createTextNode('Preregistration mode (declare ONE analysis up front — honest, brutal)'));
     controls.appendChild(pre);
+    const snd = el('label', { class: 'snd-toggle' });
+    const scb = el('input', { type: 'checkbox' });
+    scb.checked = App.sound;
+    scb.addEventListener('change', () => { App.sound = scb.checked; try { localStorage.setItem('pspss_sound', App.sound ? '1' : '0'); } catch (e) {} if (App.sound) beep(660, 0.08); });
+    snd.appendChild(scb); snd.appendChild(document.createTextNode('🔊 Sound'));
+    controls.appendChild(snd);
     wrap.appendChild(controls);
 
     // learn / play / profile entry points
@@ -263,25 +292,32 @@
 
   function menu(name) {
     const m = el('div', { class: 'menu' });
-    m.appendChild(el('div', { class: 'menu-label', text: name }));
-    const dd = el('div', { class: 'dropdown' });
+    const label = el('div', { class: 'menu-label', text: name, tabindex: '0', role: 'button', 'aria-haspopup': 'true' });
+    m.appendChild(label);
+    const dd = el('div', { class: 'dropdown', role: 'menu' });
     items(name).forEach((it) => {
       if (it.sep) { dd.appendChild(el('div', { class: 'sep' })); return; }
       const cls = 'item' + (it.disabled ? ' disabled' : '') + (it.danger ? ' danger' : '');
-      const node = el('div', { class: cls, title: it.tip || '' }, [
+      const node = el('div', { class: cls, title: it.tip || '', role: 'menuitem', tabindex: it.disabled ? '-1' : '0', 'aria-label': it.label + (it.cost ? ', ' + it.cost : '') }, [
         el('span', { text: it.label }),
         el('span', { class: 'cost', text: it.cost || '' }),
       ]);
-      if (!it.disabled) node.addEventListener('click', (e) => { e.stopPropagation(); closeMenus(); it.run(); });
+      if (!it.disabled) {
+        const act = (e) => { e.stopPropagation(); closeMenus(); it.run(); };
+        node.addEventListener('click', act);
+        node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); act(e); } });
+      }
       dd.appendChild(node);
     });
     m.appendChild(dd);
-    m.querySelector('.menu-label').addEventListener('click', (e) => {
+    const toggle = (e) => {
       e.stopPropagation();
       const wasOpen = m.classList.contains('open');
       closeMenus();
       if (!wasOpen) m.classList.add('open');
-    });
+    };
+    label.addEventListener('click', toggle);
+    label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); } });
     return m;
   }
   function closeMenus() { document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')); }
@@ -339,6 +375,7 @@
   function doTool(toolId, payload) {
     const res = E.applyTool(App.state, toolId, payload);
     if (res.error) { toast(res.error); return; }
+    sfx('move');
     const tool = E.TOOLS.find((t) => t.id === toolId);
     renderData();
     renderStatStrip();
@@ -444,7 +481,10 @@
     const pCard = el('div', { class: 'stat' + (a.win ? ' sig' : ''), id: 'stat-p' }, [
       el('div', { class: 'k', text: a.metricLabel + '  ·  goal: ' + a.goalText }),
       el('div', { class: 'v', text: fmtMetric(a) }),
+      el('div', { class: 'statusbadge', text: a.win ? '✓ goal met' : '✗ goal not met' }),
     ]);
+    pCard.setAttribute('role', 'status');
+    pCard.setAttribute('aria-label', a.metricLabel + ' ' + fmtMetric(a) + ', goal ' + a.goalText + ', ' + (a.win ? 'met' : 'not met'));
     strip.appendChild(pCard);
     strip.appendChild(el('div', { class: 'stat' }, [
       el('div', { class: 'k', text: a.testName }),
@@ -506,7 +546,7 @@
     tbl.appendChild(head);
     const row = el('tr');
     cells.forEach((c) => row.appendChild(el('td', { text: c[1] })));
-    row.appendChild(el('td', { class: 'out-p ' + (a.win ? 'sig' : 'nsig'), text: fmtMetric(a) }));
+    row.appendChild(el('td', { class: 'out-p ' + (a.win ? 'sig' : 'nsig'), text: (a.win ? '✓ ' : '✗ ') + fmtMetric(a) }));
     tbl.appendChild(row);
     block.appendChild(tbl);
 
@@ -545,7 +585,7 @@
   function modal(barText, bodyNode, opts) {
     closeModal();
     const back = el('div', { class: 'modal-back', id: 'modal-back' });
-    const m = el('div', { class: 'modal' });
+    const m = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': barText });
     m.appendChild(el('div', { class: 'bar', text: barText }));
     const body = el('div', { class: 'body' });
     body.appendChild(bodyNode);
@@ -556,6 +596,18 @@
     return body;
   }
   function closeModal() { $('#modal-root').innerHTML = ''; }
+  function modalOpen() { const r = $('#modal-root'); return r && r.children && r.children.length > 0; }
+  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless typing).
+  document.addEventListener('keydown', (e) => {
+    if (!modalOpen()) return;
+    if (e.key === 'Escape') { closeModal(); }
+    else if (e.key === 'Enter') {
+      const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+      const b = $('#modal-root').querySelector('.btn');
+      if (b) { e.preventDefault && e.preventDefault(); b.click(); }
+    }
+  });
 
   function showBriefing() {
     const lv = App.state.level;
@@ -661,6 +713,7 @@
     const lv = st.level;
     const body = el('div');
     let stars = E.stars(st);
+    sfx(event === 'retract' ? 'bad' : 'win');
 
     if (event === 'win' && lv.objective === 'honest') {
       // Campaign 4: you reached a defensible conclusion the right way.

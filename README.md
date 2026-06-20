@@ -15,6 +15,12 @@ real literature — that's the joke, and the lesson.
   manipulation actually cracks it, instead of clicking the only available button.
 - **Campaign 3 — In Bayes We Trust:** no more p-values; the metric is the **Bayes factor**, abused
   via prior width, one-sided priors, optional stopping, and BF₀₁ relabelling.
+- **Campaign 4 — Open Science (the redemption arc):** the goal flips — instead of chasing
+  significance you must reach a **defensible conclusion**: preregister, run an a-priori power
+  analysis, correct for multiple comparisons, defend a null with an **equivalence test (TOST)**,
+  report the full **specification curve**, and run a **preregistered replication**. The whole QRP
+  arsenal is still on the menu and still tempting — but it raises suspicion and *loses*. Only the
+  honest method wins.
 
 Campaigns unlock in order. See [DESIGN.md](DESIGN.md) for the full design.
 
@@ -31,12 +37,18 @@ The game is built to *teach*, not just amuse — for undergrads, grads, and work
   multiverse).
 - **Sandbox Lab** — drag sliders for n / effect / SD / prior and watch p (or the Bayes factor) react
   live. Pure intuition-building.
+- **Meta-Science Lab** — the reviewer's view: a **p-curve** detector, a **funnel/publication-bias**
+  plot, an a-priori **power** calculator, and an **equivalence (TOST)** calculator.
 - **Spot the QRP** — identify the malpractices in realistic fabricated abstracts.
 - **Career Dashboard + achievements** — publications, retractions, replication rate, and unlockable
   titles.
 
 Difficulty is deliberately uniform and hard — no easy mode. Being a good researcher isn't the same
 as being good at p-hacking; the game rewards the hack precisely so the debrief can indict it.
+
+**Accessible & classroom-ready:** colour-independent status (✓/✗ text, not just red/green), keyboard
+navigation (Esc closes dialogs, Enter confirms, focusable menus), ARIA labels on dialogs and figures,
+a responsive layout that works on phones/projectors, and an optional sound toggle (off by default).
 
 ## Play
 
@@ -65,7 +77,9 @@ phrase — **`trending toward significance`** (it also accepts `marginally signi
 | ![Bayesian level](screenshots/09-bayesian-level.png) **Campaign 3 (Bayesian)** — the metric becomes the Bayes factor; prior-hack it. | ![House rule](screenshots/10-house-rule.png) **House rule** — some finales demand p < .001. |
 | ![Publication](screenshots/11-publication-win.png) **Publication** — significance secured, in an absurd journal. | ![Replication crisis](screenshots/12-replication-crisis.png) **Replication crisis** — years later, your hacked findings evaporate. |
 | ![Reviewer 2 backdoor](screenshots/13-backdoor.png) **Reviewer 2 backdoor** — the unlock prompt for lecturers/playtesters. | ![Unlocked](screenshots/14-unlocked-map.png) **Unlocked** — all campaigns open, no faked progress. |
-| ![Full arsenal](screenshots/15-full-arsenal.png) **Full arsenal (Campaign 2+)** — from Campaign 2 every level offers the whole toolbox; you must work out which manipulation cracks it. | |
+| ![Full arsenal](screenshots/15-full-arsenal.png) **Full arsenal (Campaign 2+)** — from Campaign 2 every level offers the whole toolbox; you must work out which manipulation cracks it. | ![Open Science](screenshots/c4-level.png) **Campaign 4 — Open Science** — honest tools (0% suspicion) sit beside the tempting QRPs; only the right method reaches a defensible conclusion. |
+| ![Honest win](screenshots/c4-win.png) **Defensible conclusion** — the redemption-arc win: trustworthy and reproducible, no torture required. | ![Meta-Science Lab](screenshots/meta-lab.png) **Meta-Science Lab** — detect p-hacking (p-curve) and publication bias (funnel); plan power and equivalence. |
+| ![Responsive](screenshots/responsive-mobile.png) **Responsive & accessible** — reflows for phones/projectors; ✓/✗ status is not colour-only. | |
 
 ## Develop
 

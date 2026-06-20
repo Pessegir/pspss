@@ -26,7 +26,8 @@
     return t;
   }
   function frame(title, xlabel, ylabel) {
-    const g = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'background:#fff;border:1px solid #dcd8cb;border-radius:4px' });
+    const g = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': title + (xlabel ? ', x: ' + xlabel : '') + (ylabel ? ', y: ' + ylabel : ''), style: 'background:#fff;border:1px solid #dcd8cb;border-radius:4px' });
+    const ttl = s('title'); ttl.appendChild(document.createTextNode(title)); g.appendChild(ttl);
     g.appendChild(txt(W / 2, 16, title, { 'text-anchor': 'middle', 'font-weight': 700, fill: '#111' }));
     // axes
     g.appendChild(s('line', { x1: M.l, y1: H - M.b, x2: W - M.r, y2: H - M.b, stroke: '#444' }));
