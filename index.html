@@ -3088,6 +3088,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'age', label: 'Age' }, { field: 'engagement', label: 'Engagement' }],
       hypothesis: 'Treatment B improves Recovery over control A.',
       brief: 'Raw, there is nothing. Age was measured before treatment; engagement was measured after. Adjust for the one your gut calls a "confounder" and an effect blooms from a door that was closed.',
+      dag: { title: 'Recovery trial', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'engagement', label: 'Eng', x: 0.5, y: 0.82, kind: 'covariate' }, { id: 'age', label: 'Age', x: 0.5, y: 0.18, kind: 'covariate' }], edges: [{ from: 'T', to: 'engagement' }, { from: 'Y', to: 'engagement' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3132,6 +3133,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'smoking', label: 'Smoking' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: 'Your treatment does nothing. But the model also "controls for" smoking, and smoking is wildly significant. Report THAT row of the regression table as your effect — the table never labels which coefficient is causal.',
+      dag: { title: 'Adjusted model', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.62, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'smoking', label: 'Smk', x: 0.5, y: 0.18, kind: 'covariate' }], edges: [{ from: 'smoking', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3170,6 +3172,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'zvar', label: 'Trait Z' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: '"Adjust for everything measured before treatment," they said. Trait Z was measured at baseline — surely safe. But Z sits at the centre of an M: condition on it and a path opens between treatment and outcome that was never there.',
+      dag: { title: 'An M-structure', nodes: [{ id: 'U1', label: 'U1', x: 0.28, y: 0.16, kind: 'unobserved' }, { id: 'U2', label: 'U2', x: 0.72, y: 0.16, kind: 'unobserved' }, { id: 'zvar', label: 'Z', x: 0.5, y: 0.5, kind: 'covariate' }, { id: 'T', label: 'T', x: 0.08, y: 0.85, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.85, kind: 'outcome' }], edges: [{ from: 'U1', to: 'T' }, { from: 'U1', to: 'zvar' }, { from: 'U2', to: 'zvar' }, { from: 'U2', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3215,6 +3218,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'xendo', label: 'Dose taken' }, { field: 'distance', label: 'Distance' }],
       hypothesis: 'Taking more of the drug (dose) raises the outcome.',
       brief: 'OLS of dose on outcome is confounded into a flat nothing. But you have an instrument — distance to the clinic — and two-stage least squares makes confounding vanish. Never mind that distance also affects the outcome directly; the exclusion restriction is a detail.',
+      dag: { title: 'Instrument (exclusion violated)', nodes: [{ id: 'distance', label: 'Dist', x: 0.08, y: 0.38, kind: 'instrument' }, { id: 'lottery', label: 'Lot', x: 0.08, y: 0.85, kind: 'instrument' }, { id: 'dose', label: 'Dose', x: 0.45, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'U', label: 'U', x: 0.45, y: 0.12, kind: 'unobserved' }], edges: [{ from: 'distance', to: 'dose' }, { from: 'distance', to: 'Y', kind: 'biasing' }, { from: 'lottery', to: 'dose' }, { from: 'U', to: 'dose' }, { from: 'U', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3261,6 +3265,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'age', label: 'Age' }, { field: 'income', label: 'Income' }, { field: 'mood', label: 'Mood' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: 'Five defensible adjustment sets, exactly one of them significant. (One of your "covariates" was measured after treatment — but a specification search will not hold that against you.)',
+      dag: { title: 'Which to adjust for?', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'mood', label: 'Mood', x: 0.5, y: 0.82, kind: 'covariate' }, { id: 'age', label: 'Age', x: 0.32, y: 0.16, kind: 'covariate' }, { id: 'income', label: 'Inc', x: 0.68, y: 0.16, kind: 'covariate' }], edges: [{ from: 'T', to: 'mood' }, { from: 'Y', to: 'mood' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3306,6 +3311,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       extraCols: [{ field: 'trait', label: 'Trait W' }, { field: 'zcol', label: 'Score Z' }],
       hypothesis: 'Treatment B raises the outcome — or, failing that, SOMETHING does.',
       brief: 'No single move works. The treatment is null, Trait W predicts nothing on its own, and Age is a red herring. But condition on the Latent Score AND report Trait W — only together — and a path the DAG never drew lights up.',
+      dag: { title: 'The garden of forking DAGs', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.82, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'trait', label: 'W', x: 0.5, y: 0.16, kind: 'covariate' }, { id: 'zcol', label: 'Z', x: 0.5, y: 0.55, kind: 'covariate' }, { id: 'agec', label: 'Age', x: 0.22, y: 0.16, kind: 'covariate' }], edges: [{ from: 'trait', to: 'zcol' }, { from: 'Y', to: 'zcol' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -3904,6 +3910,21 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         return {
           message: `Random-effects caterpillar rendered. Each cluster's estimate is shrunk toward 0 (partial pooling); an ICC of ≈ ${icc} of the variance sits between clusters — which is exactly why the rows aren't independent.`,
           chart: { fn: 'caterpillar', args: [pts, { title: 'Cluster random intercepts (BLUP ± SD)', xlabel: 'cluster (sorted)' }] },
+        };
+      },
+    },
+    {
+      id: 'plot-dag',
+      label: 'Show the Causal DAG',
+      kind: 'diagnostic',
+      menu: 'Graphs',
+      enabled: (s) => !!s.level.dag,
+      run(state) {
+        const d = state.level.dag;
+        const highlight = state.controlVar ? [state.controlVar] : [];
+        return {
+          message: 'Causal diagram rendered. Arrows are assumed causes; a node with two arrows into it is a collider — box it (condition on it) and a non-causal path opens.',
+          chart: { fn: 'dag', args: [d.nodes, d.edges, { title: d.title || 'Causal DAG', highlight }] },
         };
       },
     },
@@ -4750,7 +4771,47 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return g;
   }
 
-  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line, pcurve, funnel };
+  // ---- causal DAG (nodes + directed edges) ---------------------------------
+  // nodes: [{id, label, x, y, kind}] with x,y in [0,1]; kind ∈ treatment|outcome|
+  //   covariate|unobserved|instrument. edges: [{from, to, kind}] (kind 'biasing'
+  //   draws a dashed red arrow). opts.highlight: ids drawn boxed ("conditioned on").
+  function dag(nodes, edges, opts) {
+    opts = opts || {};
+    const title = opts.title || 'Causal DAG';
+    const g = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': title + ': ' + nodes.map((n) => n.label).join(', '), style: 'background:#fff;border:1px solid #dcd8cb;border-radius:4px' });
+    const ttl = s('title'); ttl.appendChild(document.createTextNode(title)); g.appendChild(ttl);
+    g.appendChild(txt(W / 2, 16, title, { 'text-anchor': 'middle', 'font-weight': 700, fill: '#111' }));
+    const defs = s('defs');
+    [['dag-ah', '#64748b'], ['dag-ah-r', '#be123c']].forEach(([mid, col]) => {
+      const mk = s('marker', { id: mid, viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+      mk.appendChild(s('path', { d: 'M0 0 L10 5 L0 10 z', fill: col }));
+      defs.appendChild(mk);
+    });
+    g.appendChild(defs);
+    const pad = 34, top = 30, R = 16;
+    const X = (nx) => pad + nx * (W - 2 * pad);
+    const Y = (ny) => top + ny * (H - top - pad);
+    const byId = {}; nodes.forEach((n) => (byId[n.id] = n));
+    edges.forEach((e) => {
+      const a = byId[e.from], b = byId[e.to]; if (!a || !b) return;
+      const x1 = X(a.x), y1 = Y(a.y), x2 = X(b.x), y2 = Y(b.y);
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const bias = e.kind === 'biasing';
+      g.appendChild(s('line', { x1: x1 + ux * R, y1: y1 + uy * R, x2: x2 - ux * (R + 5), y2: y2 - uy * (R + 5), stroke: bias ? '#be123c' : '#64748b', 'stroke-width': bias ? 2 : 1.5, 'stroke-dasharray': bias ? '5 3' : null, 'marker-end': bias ? 'url(#dag-ah-r)' : 'url(#dag-ah)' }));
+    });
+    const COL = { treatment: '#3b6ea5', outcome: '#15803d', covariate: '#b45309', unobserved: '#94a3b8', instrument: '#0891b2' };
+    nodes.forEach((n) => {
+      const cx = X(n.x), cy = Y(n.y), col = COL[n.kind] || '#64748b';
+      const conditioned = (opts.highlight || []).indexOf(n.id) >= 0;
+      if (conditioned) g.appendChild(s('rect', { x: cx - R, y: cy - R, width: 2 * R, height: 2 * R, rx: 3, fill: '#fff', stroke: col, 'stroke-width': 3 }));
+      else g.appendChild(s('circle', { cx, cy, r: R, fill: '#fff', stroke: col, 'stroke-width': 2, 'stroke-dasharray': n.kind === 'unobserved' ? '3 2' : null }));
+      g.appendChild(txt(cx, cy + 4, n.label, { 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: col }));
+    });
+    if ((opts.highlight || []).length) g.appendChild(txt(W - 12, H - 8, '▢ = conditioned on', { 'text-anchor': 'end', 'font-size': 10, fill: '#7c3aed' }));
+    return g;
+  }
+
+  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line, pcurve, funnel, dag };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PSPSS_charts = api;
 })(typeof self !== 'undefined' ? self : this);

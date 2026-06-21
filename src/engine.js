@@ -479,6 +479,21 @@
       },
     },
     {
+      id: 'plot-dag',
+      label: 'Show the Causal DAG',
+      kind: 'diagnostic',
+      menu: 'Graphs',
+      enabled: (s) => !!s.level.dag,
+      run(state) {
+        const d = state.level.dag;
+        const highlight = state.controlVar ? [state.controlVar] : [];
+        return {
+          message: 'Causal diagram rendered. Arrows are assumed causes; a node with two arrows into it is a collider — box it (condition on it) and a non-causal path opens.',
+          chart: { fn: 'dag', args: [d.nodes, d.edges, { title: d.title || 'Causal DAG', highlight }] },
+        };
+      },
+    },
+    {
       id: 'plot-bf-robustness',
       label: 'Bayes-Factor Robustness Curve',
       kind: 'diagnostic',

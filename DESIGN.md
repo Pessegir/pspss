@@ -96,7 +96,9 @@ a chosen instrument). The six levels span post- and pre-treatment colliders (col
 Table 2 fallacy, a weak/invalid instrument, adjustment-set shopping, and *The Whole Garden of Forking
 DAGs* — a two-move capstone where significance appears only when you condition on a collider **and**
 report the obliging coefficient. All citations (Pearl, Westreich & Greenland, Ding & Miratrix, Bound
-et al.) are real.
+et al.) are real. A free **"Show the Causal DAG"** diagnostic (`charts.dag`) draws each level's graph —
+nodes coloured by role, a dashed red arrow for an exclusion violation, and a box around whatever you
+condition on — so you can *see* the collider you're about to open.
 
 ## Educational layer
 

@@ -27,6 +27,7 @@
       extraCols: [{ field: 'age', label: 'Age' }, { field: 'engagement', label: 'Engagement' }],
       hypothesis: 'Treatment B improves Recovery over control A.',
       brief: 'Raw, there is nothing. Age was measured before treatment; engagement was measured after. Adjust for the one your gut calls a "confounder" and an effect blooms from a door that was closed.',
+      dag: { title: 'Recovery trial', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'engagement', label: 'Eng', x: 0.5, y: 0.82, kind: 'covariate' }, { id: 'age', label: 'Age', x: 0.5, y: 0.18, kind: 'covariate' }], edges: [{ from: 'T', to: 'engagement' }, { from: 'Y', to: 'engagement' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -71,6 +72,7 @@
       extraCols: [{ field: 'smoking', label: 'Smoking' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: 'Your treatment does nothing. But the model also "controls for" smoking, and smoking is wildly significant. Report THAT row of the regression table as your effect — the table never labels which coefficient is causal.',
+      dag: { title: 'Adjusted model', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.62, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'smoking', label: 'Smk', x: 0.5, y: 0.18, kind: 'covariate' }], edges: [{ from: 'smoking', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -109,6 +111,7 @@
       extraCols: [{ field: 'zvar', label: 'Trait Z' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: '"Adjust for everything measured before treatment," they said. Trait Z was measured at baseline — surely safe. But Z sits at the centre of an M: condition on it and a path opens between treatment and outcome that was never there.',
+      dag: { title: 'An M-structure', nodes: [{ id: 'U1', label: 'U1', x: 0.28, y: 0.16, kind: 'unobserved' }, { id: 'U2', label: 'U2', x: 0.72, y: 0.16, kind: 'unobserved' }, { id: 'zvar', label: 'Z', x: 0.5, y: 0.5, kind: 'covariate' }, { id: 'T', label: 'T', x: 0.08, y: 0.85, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.85, kind: 'outcome' }], edges: [{ from: 'U1', to: 'T' }, { from: 'U1', to: 'zvar' }, { from: 'U2', to: 'zvar' }, { from: 'U2', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -154,6 +157,7 @@
       extraCols: [{ field: 'xendo', label: 'Dose taken' }, { field: 'distance', label: 'Distance' }],
       hypothesis: 'Taking more of the drug (dose) raises the outcome.',
       brief: 'OLS of dose on outcome is confounded into a flat nothing. But you have an instrument — distance to the clinic — and two-stage least squares makes confounding vanish. Never mind that distance also affects the outcome directly; the exclusion restriction is a detail.',
+      dag: { title: 'Instrument (exclusion violated)', nodes: [{ id: 'distance', label: 'Dist', x: 0.08, y: 0.38, kind: 'instrument' }, { id: 'lottery', label: 'Lot', x: 0.08, y: 0.85, kind: 'instrument' }, { id: 'dose', label: 'Dose', x: 0.45, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'U', label: 'U', x: 0.45, y: 0.12, kind: 'unobserved' }], edges: [{ from: 'distance', to: 'dose' }, { from: 'distance', to: 'Y', kind: 'biasing' }, { from: 'lottery', to: 'dose' }, { from: 'U', to: 'dose' }, { from: 'U', to: 'Y' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -200,6 +204,7 @@
       extraCols: [{ field: 'age', label: 'Age' }, { field: 'income', label: 'Income' }, { field: 'mood', label: 'Mood' }],
       hypothesis: 'Treatment B raises the outcome over control A.',
       brief: 'Five defensible adjustment sets, exactly one of them significant. (One of your "covariates" was measured after treatment — but a specification search will not hold that against you.)',
+      dag: { title: 'Which to adjust for?', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.5, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'mood', label: 'Mood', x: 0.5, y: 0.82, kind: 'covariate' }, { id: 'age', label: 'Age', x: 0.32, y: 0.16, kind: 'covariate' }, { id: 'income', label: 'Inc', x: 0.68, y: 0.16, kind: 'covariate' }], edges: [{ from: 'T', to: 'mood' }, { from: 'Y', to: 'mood' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];
@@ -245,6 +250,7 @@
       extraCols: [{ field: 'trait', label: 'Trait W' }, { field: 'zcol', label: 'Score Z' }],
       hypothesis: 'Treatment B raises the outcome — or, failing that, SOMETHING does.',
       brief: 'No single move works. The treatment is null, Trait W predicts nothing on its own, and Age is a red herring. But condition on the Latent Score AND report Trait W — only together — and a path the DAG never drew lights up.',
+      dag: { title: 'The garden of forking DAGs', nodes: [{ id: 'T', label: 'T', x: 0.08, y: 0.82, kind: 'treatment' }, { id: 'Y', label: 'Y', x: 0.92, y: 0.5, kind: 'outcome' }, { id: 'trait', label: 'W', x: 0.5, y: 0.16, kind: 'covariate' }, { id: 'zcol', label: 'Z', x: 0.5, y: 0.55, kind: 'covariate' }, { id: 'agec', label: 'Age', x: 0.22, y: 0.16, kind: 'covariate' }], edges: [{ from: 'trait', to: 'zcol' }, { from: 'Y', to: 'zcol' }] },
       build(seed) {
         const rng = makeRNG(seed);
         const parts = [];

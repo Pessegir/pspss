@@ -220,7 +220,47 @@
     return g;
   }
 
-  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line, pcurve, funnel };
+  // ---- causal DAG (nodes + directed edges) ---------------------------------
+  // nodes: [{id, label, x, y, kind}] with x,y in [0,1]; kind ∈ treatment|outcome|
+  //   covariate|unobserved|instrument. edges: [{from, to, kind}] (kind 'biasing'
+  //   draws a dashed red arrow). opts.highlight: ids drawn boxed ("conditioned on").
+  function dag(nodes, edges, opts) {
+    opts = opts || {};
+    const title = opts.title || 'Causal DAG';
+    const g = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': title + ': ' + nodes.map((n) => n.label).join(', '), style: 'background:#fff;border:1px solid #dcd8cb;border-radius:4px' });
+    const ttl = s('title'); ttl.appendChild(document.createTextNode(title)); g.appendChild(ttl);
+    g.appendChild(txt(W / 2, 16, title, { 'text-anchor': 'middle', 'font-weight': 700, fill: '#111' }));
+    const defs = s('defs');
+    [['dag-ah', '#64748b'], ['dag-ah-r', '#be123c']].forEach(([mid, col]) => {
+      const mk = s('marker', { id: mid, viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+      mk.appendChild(s('path', { d: 'M0 0 L10 5 L0 10 z', fill: col }));
+      defs.appendChild(mk);
+    });
+    g.appendChild(defs);
+    const pad = 34, top = 30, R = 16;
+    const X = (nx) => pad + nx * (W - 2 * pad);
+    const Y = (ny) => top + ny * (H - top - pad);
+    const byId = {}; nodes.forEach((n) => (byId[n.id] = n));
+    edges.forEach((e) => {
+      const a = byId[e.from], b = byId[e.to]; if (!a || !b) return;
+      const x1 = X(a.x), y1 = Y(a.y), x2 = X(b.x), y2 = Y(b.y);
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const bias = e.kind === 'biasing';
+      g.appendChild(s('line', { x1: x1 + ux * R, y1: y1 + uy * R, x2: x2 - ux * (R + 5), y2: y2 - uy * (R + 5), stroke: bias ? '#be123c' : '#64748b', 'stroke-width': bias ? 2 : 1.5, 'stroke-dasharray': bias ? '5 3' : null, 'marker-end': bias ? 'url(#dag-ah-r)' : 'url(#dag-ah)' }));
+    });
+    const COL = { treatment: '#3b6ea5', outcome: '#15803d', covariate: '#b45309', unobserved: '#94a3b8', instrument: '#0891b2' };
+    nodes.forEach((n) => {
+      const cx = X(n.x), cy = Y(n.y), col = COL[n.kind] || '#64748b';
+      const conditioned = (opts.highlight || []).indexOf(n.id) >= 0;
+      if (conditioned) g.appendChild(s('rect', { x: cx - R, y: cy - R, width: 2 * R, height: 2 * R, rx: 3, fill: '#fff', stroke: col, 'stroke-width': 3 }));
+      else g.appendChild(s('circle', { cx, cy, r: R, fill: '#fff', stroke: col, 'stroke-width': 2, 'stroke-dasharray': n.kind === 'unobserved' ? '3 2' : null }));
+      g.appendChild(txt(cx, cy + 4, n.label, { 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: col }));
+    });
+    if ((opts.highlight || []).length) g.appendChild(txt(W - 12, H - 8, '▢ = conditioned on', { 'text-anchor': 'end', 'font-size': 10, fill: '#7c3aed' }));
+    return g;
+  }
+
+  const api = { histogram, boxplotByGroup, scatter, spaghetti, caterpillar, line, pcurve, funnel, dag };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PSPSS_charts = api;
 })(typeof self !== 'undefined' ? self : this);
