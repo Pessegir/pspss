@@ -370,6 +370,8 @@
     if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
     if (tool.needsChoice === 'df') return chooseFromList('Choose Degrees of Freedom', [{ id: 'finite', label: 'Finite (Satterthwaite / between-within)' }, { id: 'z', label: 'Wald z (infinite df)' }], (o) => doTool('choose-df', { method: o.id }));
     if (tool.needsChoice === 'glmm') return chooseFromList('Choose the Model Family', [{ id: 'gaussian', label: 'Gaussian LMM (normal errors)' }, { id: 'binomial', label: 'Logistic GLMM (binomial)' }, { id: 'poisson', label: 'Poisson GLMM' }, { id: 'poisson-olre', label: 'Poisson GLMM + observation-level RE' }], (o) => doTool('fit-glmm', o.id === 'poisson-olre' ? { family: 'poisson', olre: true } : { family: o.id }));
+    if (tool.needsChoice === 'coefficient') return chooseFromList('Report Which Coefficient?', App.state.level.coefficients, (o) => doTool('report-coefficient', { coef: o.id }));
+    if (tool.needsChoice === 'instrument') return chooseFromList('Choose an Instrument', App.state.level.instruments.concat([{ id: null, label: 'None (ordinary least squares)' }]), (o) => doTool('use-instrument', { instrument: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }

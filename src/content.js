@@ -98,6 +98,16 @@
       cite: 'Wrong family / ignored overdispersion gives optimistic SEs (Bolker et al., 2009; Harrison, 2014).',
     },
 
+    // ---- Campaign 6 (causal inference) ----
+    'report-coefficient': {
+      tip: 'A regression has many coefficients. Report whichever one is significant.',
+      cite: 'Interpreting control-variable coefficients causally is the Table 2 fallacy (Westreich & Greenland, 2013).',
+    },
+    'use-instrument': {
+      tip: 'Confounded effect? An instrument makes it vanish — valid or not.',
+      cite: 'A weak or invalid instrument yields badly biased, over-confident 2SLS estimates (Bound, Jaeger & Baker, 1995).',
+    },
+
     // ---- Campaign 3 (Bayesian) ----
     'plot-bf-robustness': { tip: 'BF as a function of the prior. Find the flattering corner.' },
     'set-prior': {
@@ -144,6 +154,8 @@
     'fit-lmm': 'Slopes? In THIS economy? 📉',
     'choose-df': 'Infinite degrees of freedom, baby. ♾️',
     'fit-glmm': 'Pick the distribution that vibes. 🎲',
+    'report-coefficient': 'Promote a coefficient that loves you. 📊',
+    'use-instrument': 'Summon an instrument. Validity optional. 🎻',
     'median-split': 'Snap the variable in half. 🔪',
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',

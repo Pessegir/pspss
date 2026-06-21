@@ -342,6 +342,52 @@
       antidote: 'Preregister the random-effects structure and inference method; report every analytic branch.',
       verdict: 'invalid',
     },
+    // ---- Campaign 6: causal inference ----
+    'table2-fallacy': {
+      term: 'The Table 2 fallacy',
+      plain: "Interpreting a control variable's regression coefficient as its causal effect, alongside the treatment.",
+      harm: 'A coefficient adjusted for the wrong set of variables (mediators, other exposures) is not a causal effect; reporting it as one is a category error a regression table invites.',
+      citation: 'Westreich & Greenland (2013), American Journal of Epidemiology.',
+      realCase: 'Risk-factor coefficients in adjusted models are routinely (mis)read as causal across epidemiology.',
+      antidote: 'Identify the one effect you can estimate from your adjustment set; do not interpret the control coefficients causally.',
+      verdict: 'invalid',
+    },
+    'm-bias': {
+      term: 'M-bias (bad control)',
+      plain: 'Adjusting for a pre-treatment variable that is a collider on an M-shaped path between two unobserved causes.',
+      harm: 'Refutes "adjust for everything measured before treatment": conditioning on the M-collider opens a path and induces a treatment–outcome association from nothing.',
+      citation: 'Ding & Miratrix (2015), Journal of Causal Inference; Pearl (causal DAGs).',
+      realCase: 'Reflexively controlling for every available baseline covariate can add bias, not remove it.',
+      antidote: 'Choose the adjustment set from a DAG (the back-door criterion), not from what was measured first.',
+      verdict: 'invalid',
+    },
+    'weak-instrument': {
+      term: 'Weak / invalid instrument',
+      plain: 'Using an instrumental variable that barely predicts the exposure, or that violates the exclusion restriction, in a 2SLS analysis.',
+      harm: 'A weak instrument inflates variance and small-sample bias; an invalid one (that affects the outcome directly) yields a confidently significant but spurious causal estimate.',
+      citation: 'Bound, Jaeger & Baker (1995), JASA; Angrist & Pischke (2009).',
+      realCase: 'Instruments are often justified by convenience; weak/invalid ones produce notorious false IV findings.',
+      antidote: 'Check first-stage strength (F ≫ 10) and defend the exclusion restriction substantively, not by assumption.',
+      verdict: 'invalid',
+    },
+    'confounder-search': {
+      term: 'Adjustment-set shopping',
+      plain: 'Trying many covariate-adjustment sets and reporting whichever one makes the effect significant.',
+      harm: 'Across the multiverse of "defensible" adjustment sets some are significant by chance — and one may quietly include a collider that manufactures the effect.',
+      citation: 'Simmons, Nelson & Simonsohn (2011); Gelman & Loken (2013).',
+      realCase: 'Covariate-set flexibility is one of the most common (and least reported) researcher degrees of freedom.',
+      antidote: 'Pre-specify the adjustment set from a causal model; report the full specification curve.',
+      verdict: 'invalid',
+    },
+    'causal-forking': {
+      term: 'Chained causal mis-specification',
+      plain: 'Combining several causal sins (condition on a collider AND report the obliging coefficient) so that only the full chain reaches significance.',
+      harm: 'Each step is a defensible-looking fork; stacked and undisclosed they conjure an effect no single move could.',
+      citation: 'Pearl (Causality); Gelman & Loken (2013); Simmons et al. (2011).',
+      realCase: 'Pipelines accumulate adjustments and reported coefficients; the final "finding" is a path the DAG never drew.',
+      antidote: 'Draw the DAG, pre-specify the estimand and adjustment set, and report every coefficient and specification.',
+      verdict: 'invalid',
+    },
   };
 
   // Short "what you did" label per tool id, for the debrief's action list.
@@ -377,11 +423,14 @@
     // Campaign 5 — the mixed-model masterclass
     'choose-df': 'swapped to infinite-df Wald inference',
     'fit-glmm': 'chose the model family that obliged',
+    // Campaign 6 — causal inference
+    'report-coefficient': "reported a control variable's coefficient as the effect",
+    'use-instrument': 'instrumented with a convenient variable (2SLS)',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
   // for matching them and the trust verdict. Options shown come from QUIZ_OPTIONS.
-  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored'];
+  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored', 'table2-fallacy', 'm-bias', 'weak-instrument'];
 
   const QUIZ_ITEMS = [
     {
@@ -468,6 +517,24 @@
       qrps: ['overdispersion-ignored'], trust: false,
       explain: 'Unmodelled overdispersion shrinks every SE; the effect needs an observation-level random effect or a negative-binomial model to be believed.',
     },
+    {
+      id: 'q15',
+      scenario: '"The treatment coefficient was null, but in the same adjusted model the coefficient for baseline smoking was highly significant, so we conclude smoking causally raises the outcome."',
+      qrps: ['table2-fallacy'], trust: false,
+      explain: "A control variable's coefficient isn't adjusted for the right things to be its causal effect — the Table 2 fallacy.",
+    },
+    {
+      id: 'q16',
+      scenario: '"OLS of dose on outcome was flat, so we instrumented dose with distance-to-clinic. The 2SLS effect was large and significant — distance surely only affects the outcome through dose."',
+      qrps: ['weak-instrument'], trust: false,
+      explain: 'If distance affects the outcome directly (exclusion violated), the IV estimate is biased and confidently wrong.',
+    },
+    {
+      id: 'q17',
+      scenario: '"With no covariates the effect was null. Adjusting for a post-treatment engagement score, it became significant, so we report the adjusted model."',
+      qrps: ['collider'], trust: false,
+      explain: 'Engagement is post-treatment — conditioning on a collider opens a non-causal path and conjures the effect.',
+    },
   ];
 
   // Achievements. `check(ctx)` runs against a context built by the UI:
@@ -495,6 +562,11 @@
     { id: 'infinite-df', title: 'Infinite Confidence', desc: 'Win with the infinite-df Wald test.', check: (c) => c.event === 'win' && c.level.flaw === 'naive-df' },
     { id: 'generalized-liar', title: 'Generalized Liar', desc: 'Manufacture significance in a generalized mixed model.', check: (c) => c.event === 'win' && /clustered-binary|overdispersion-ignored/.test(c.level.flaw) },
     { id: 'forking-models', title: "Reviewer's Nightmare", desc: 'Clear the garden of forking models.', check: (c) => c.event === 'win' && c.level.flaw === 'forking-paths' },
+    // Campaign 6 — causal inference
+    { id: 'collider-artist', title: 'Collider Artist', desc: 'Conjure an effect by conditioning on a collider.', check: (c) => c.event === 'win' && /collider|m-bias/.test(c.level.flaw) },
+    { id: 'table-two', title: 'Reading the Wrong Row', desc: 'Win via the Table 2 fallacy.', check: (c) => c.event === 'win' && c.level.flaw === 'table2-fallacy' },
+    { id: 'iv-abuser', title: 'Exclusion? Never Heard of Her', desc: 'Win with a weak or invalid instrument.', check: (c) => c.event === 'win' && c.level.flaw === 'weak-instrument' },
+    { id: 'dag-boss', title: 'Correlation Street', desc: 'Clear the garden of forking DAGs.', check: (c) => c.event === 'win' && c.level.flaw === 'causal-forking' },
   ];
 
   function evaluateAchievements(ctx, already) {

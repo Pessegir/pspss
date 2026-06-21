@@ -335,6 +335,49 @@
     return { effect: g.coef, t: g.t, df: res.dfResid, p: g.p };
   }
 
+  // Two-stage least squares (instrumental variables). One endogenous regressor `x`,
+  // one or more `instruments`, optional exogenous `controls`. Returns the IV estimate
+  // of x's effect with its proper 2SLS standard error (residuals use the ACTUAL x,
+  // not the fitted x̂). Just-identified, this equals the Wald ratio cov(z,y)/cov(z,x).
+  function tsls(y, x, instruments, controls) {
+    instruments = instruments || [];
+    controls = controls || [];
+    const n = y.length;
+    // Stage 1: x on [instruments, controls] -> fitted x̂
+    const s1 = ols(x, instruments.concat(controls));
+    const xhat = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let xh = s1.beta[0], col = 1;
+      for (const z of instruments) xh += s1.beta[col++] * z[i];
+      for (const c of controls) xh += s1.beta[col++] * c[i];
+      xhat[i] = xh;
+    }
+    // Stage 2: y on [x̂, controls] (+intercept)
+    const p = 2 + controls.length;
+    const Xhat = [];
+    for (let i = 0; i < n; i++) {
+      const row = [1, xhat[i]];
+      for (const c of controls) row.push(c[i]);
+      Xhat.push(row);
+    }
+    const XtX = matZeros(p, p), Xty = new Array(p).fill(0);
+    for (let i = 0; i < n; i++) for (let a = 0; a < p; a++) { Xty[a] += Xhat[i][a] * y[i]; for (let b = 0; b < p; b++) XtX[a][b] += Xhat[i][a] * Xhat[i][b]; }
+    const XtXinv = matInverse(XtX);
+    const beta = matVec(XtXinv, Xty);
+    // 2SLS residual variance uses the ACTUAL x (the structural equation), not x̂.
+    let sse = 0;
+    for (let i = 0; i < n; i++) {
+      let yh = beta[0] + beta[1] * x[i], col = 2;
+      for (const c of controls) yh += beta[col++] * c[i];
+      sse += (y[i] - yh) * (y[i] - yh);
+    }
+    const dfResid = n - p;
+    const sigma2 = sse / dfResid;
+    const se = Math.sqrt(Math.max(0, sigma2 * XtXinv[1][1]));
+    const t = beta[1] / se;
+    return { effect: beta[1], se, t, df: dfResid, p: tDistTwoTailedP(t, dfResid) };
+  }
+
   // ---- tiny matrix helpers (for ols) --------------------------------------
 
   function matZeros(r, c) {
@@ -493,6 +536,7 @@
     pearson,
     ols,
     ancova,
+    tsls,
     // effect size & CIs
     cohenD,
     tCritical,

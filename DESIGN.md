@@ -50,6 +50,11 @@ never hardcodes "p", so the Bayes factor (C3) slots in without engine surgery. `
   2017), within/between conflation (Enders & Tofighi 2007), clustering at the wrong level (Aarts 2014),
   pooled logistic on clustered binary (Jaeger 2008), ignored overdispersion (Harrison 2014), and a
   forking-paths capstone. Full arsenal on every level + two new tools (`choose-df`, `fit-glmm`).
+- **C6 — Correlation Street (6):** causal-inference QRPs. Post-treatment collider (Montgomery et al.
+  2018), the Table 2 fallacy (Westreich & Greenland 2013), M-bias / bad pre-treatment control (Ding &
+  Miratrix 2015), a weak/invalid instrument via real 2SLS (Bound, Jaeger & Baker 1995), adjustment-set
+  shopping, and a DAG capstone that chains a collider with the Table 2 fallacy. New tools
+  `report-coefficient` and `use-instrument`; every effect is a manufactured artefact.
 
 Campaigns unlock in order (gated by clearing the previous one).
 
@@ -79,6 +84,19 @@ Wald-z inference. It is **not faked** — `glmm.test.js` pins it to the publishe
 to exact saturated-model log-odds/log-rate anchors, and to the OLRE SE-inflation property. The
 capstone, *The Garden of Forking Models*, only yields p<.05 when you drop the random slope **and**
 switch to the infinite-df Wald test — neither fork alone is enough.
+
+## Campaign 6 — Correlation Street (causal-inference QRPs)
+
+C6 makes *causality* the whole theme: every level's "effect" is a manufactured artefact of a
+mis-drawn DAG, and the player conjures it by conditioning on the wrong thing. The honest analysis is
+always null. Mechanically it reuses OLS plus a genuine **two-stage least squares** (`Stats.tsls`,
+anchored to the Wald ratio cov(z,y)/cov(z,x)) and two new tools: `report-coefficient` (pick which
+predictor's coefficient to call "the effect" — the Table 2 fallacy) and `use-instrument` (run IV with
+a chosen instrument). The six levels span post- and pre-treatment colliders (collider, M-bias), the
+Table 2 fallacy, a weak/invalid instrument, adjustment-set shopping, and *The Whole Garden of Forking
+DAGs* — a two-move capstone where significance appears only when you condition on a collider **and**
+report the obliging coefficient. All citations (Pearl, Westreich & Greenland, Ding & Miratrix, Bound
+et al.) are real.
 
 ## Educational layer
 

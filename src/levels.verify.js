@@ -13,6 +13,7 @@ require('./levels.c2');
 require('./levels.c3');
 require('./levels.c4');
 require('./levels.c5');
+require('./levels.c6');
 const { LEVELS } = require('./levels');
 const E = require('./engine');
 
@@ -60,6 +61,13 @@ const SOLUTIONS = {
   'glmm-binary': [{ id: 'choose-test', payload: { method: 'glm-logistic' } }],
   'glmm-overdispersion': [{ id: 'fit-glmm', payload: { family: 'poisson', olre: false } }],
   'forking-models': [{ id: 'fit-lmm', payload: { structure: 'ri' } }, { id: 'choose-df', payload: { method: 'z' } }],
+  // Campaign 6 — causal inference
+  'collider2': [{ id: 'add-control', payload: { var: 'engagement' } }],
+  'table2': [{ id: 'report-coefficient', payload: { coef: 'smoking' } }],
+  'm-bias': [{ id: 'add-control', payload: { var: 'zvar' } }],
+  'weak-iv': [{ id: 'use-instrument', payload: { instrument: 'distance' } }],
+  'confounder-roulette': [{ id: 'spec-multiverse' }],
+  'the-dag': [{ id: 'add-control', payload: { var: 'zcol' } }, { id: 'report-coefficient', payload: { coef: 'trait' } }],
 };
 const HONEST_TOOLS = ['preregister', 'power-analysis', 'collect-to-power', 'correct-comparisons', 'equivalence-test', 'report-multiverse'];
 
@@ -72,6 +80,9 @@ const INTENDED = {
   'within-between': 'set-aggregation', 'wrong-level': 'choose-test:lmm-clinic',
   'glmm-binary': 'choose-test:glm-logistic', 'glmm-overdispersion': 'fit-glmm:poisson',
   // 'forking-models' is a multi-move chain (no single-move winner) — intentionally absent.
+  'collider2': 'add-control:engagement', 'table2': 'report-coefficient:smoking', 'm-bias': 'add-control:zvar',
+  'weak-iv': 'use-instrument:distance', 'confounder-roulette': 'spec-multiverse',
+  // 'the-dag' is a multi-move chain — intentionally absent.
 };
 
 const ALTERNATES = { outlier: [[{ id: 'robustness-check' }], [{ id: 'winsorize' }]], skew: [[{ id: 'robustness-check' }]] };
@@ -110,6 +121,8 @@ function enumOptions(level) {
     else if (tid === 'fit-lmm') ['ri', 'max'].forEach((st) => opts.push({ id: 'fit-lmm', payload: { structure: st }, label: 'fit-lmm:' + st }));
     else if (tid === 'choose-df') ['finite', 'z'].forEach((mth) => opts.push({ id: 'choose-df', payload: { method: mth }, label: 'choose-df:' + mth }));
     else if (tid === 'fit-glmm') [{ family: 'gaussian' }, { family: 'binomial' }, { family: 'poisson' }, { family: 'poisson', olre: true }].forEach((pl) => opts.push({ id: 'fit-glmm', payload: pl, label: 'fit-glmm:' + pl.family + (pl.olre ? '+olre' : '') }));
+    else if (tid === 'report-coefficient') (level.coefficients || []).forEach((c) => opts.push({ id: 'report-coefficient', payload: { coef: c.id }, label: 'report-coefficient:' + c.id }));
+    else if (tid === 'use-instrument') (level.instruments || []).forEach((c) => opts.push({ id: 'use-instrument', payload: { instrument: c.id }, label: 'use-instrument:' + c.id }));
     else if (tid === 'add-control') (level.candidateControls || []).forEach((c) => opts.push({ id: 'add-control', payload: { var: c.id }, label: 'add-control:' + c.id }));
     else if (tid === 'pick-outcome') s0.dvNames.forEach((dv) => opts.push({ id: 'pick-outcome', payload: { dv }, label: 'pick-outcome:' + dv }));
     else if (tid === 'correct-comparisons') ['bonferroni', 'bh'].forEach((mth) => opts.push({ id: 'correct-comparisons', payload: { method: mth }, label: 'correct-comparisons:' + mth }));
@@ -149,7 +162,7 @@ for (const level of LEVELS) {
   // Campaign 2/3 full-arsenal: every offered tool must apply without error; the
   // intended option must be among the winners; a trap must have NO winner. Extra
   // winners are allowed (alternate p-hacks are realistic) and just reported.
-  if (level.campaign === 'c2' || level.campaign === 'c3' || level.campaign === 'c4' || level.campaign === 'c5') {
+  if (level.campaign === 'c2' || level.campaign === 'c3' || level.campaign === 'c4' || level.campaign === 'c5' || level.campaign === 'c6') {
     const opts = enumOptions(level);
     const winners = [];
     let errored = 0;
@@ -163,7 +176,7 @@ for (const level of LEVELS) {
     if (level.campaign === 'c2' && isTrap) check('no offered option wins (trap)', winners.length === 0, 'winners=' + JSON.stringify(winners));
     else if (level.campaign === 'c2') check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
     else if (level.campaign === 'c4') check('only HONEST tools can win (QRPs lose)', winners.every((w) => HONEST_TOOLS.indexOf(w.split(':')[0]) >= 0), 'winners=' + JSON.stringify(winners));
-    else if (level.campaign === 'c5' && INTENDED[level.id]) check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
+    else if ((level.campaign === 'c5' || level.campaign === 'c6') && INTENDED[level.id]) check('intended option is among the winners', winners.indexOf(INTENDED[level.id]) >= 0, 'winners=' + JSON.stringify(winners));
     console.log(`     (full arsenal: ${opts.length} clickable options, ${winners.length} win — ${winners.join(', ') || 'none via single move'})`);
   }
 

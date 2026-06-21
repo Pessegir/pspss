@@ -62,6 +62,9 @@
       dfMethod: level.defaultDf || 'finite', // 'finite' (Satterthwaite/BW) | 'z' (naive Wald)
       glmmFamily: level.defaultFamily || 'gaussian', // 'gaussian' | 'binomial' | 'poisson'
       glmmOLRE: level.defaultOLRE || false, // observation-level random effect (overdispersion)
+      // --- Campaign 6 (causal inference) flags ---
+      reportCoef: level.defaultCoef || null, // which predictor's coefficient to report (Table 2 fallacy)
+      instrument: null, // chosen instrumental variable id (use-instrument -> 2SLS)
       moves: 0,
       suspicion: 0,
       log: [],
@@ -976,6 +979,37 @@
         };
         return { message: 'Fitted ' + (labels[fam] || fam) + '.' +
           (fam === 'gaussian' ? ' Normal errors on this outcome — brave.' : state.glmmOLRE ? ' Overdispersion, honestly modelled.' : '') };
+      },
+    },
+
+    // ====================== Campaign 6 (causal inference) tools ======================
+    // QRPs of causal mis-specification. Each sets a flag the level's evaluate() reads.
+    {
+      id: 'report-coefficient',
+      label: 'Report a Coefficient…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 14,
+      needsChoice: 'coefficient',
+      enabled: (s) => Array.isArray(s.level.coefficients) && s.level.coefficients.length > 0,
+      run(state, payload) {
+        const cid = payload && payload.coef;
+        if (cid === state.reportCoef) return { message: 'Reported coefficient unchanged.', free: true };
+        state.reportCoef = cid || null;
+        const lbl = cid ? (state.level.coefficients.find((c) => c.id === cid) || {}).label || cid : 'the treatment';
+        return { message: `Now reporting the coefficient for: ${lbl}. A regression coefficient is a regression coefficient — who's to say which one is "the effect"?` };
+      },
+    },
+    {
+      id: 'use-instrument',
+      label: 'Use an Instrumental Variable…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 14,
+      needsChoice: 'instrument',
+      enabled: (s) => Array.isArray(s.level.instruments) && s.level.instruments.length > 0,
+      run(state, payload) {
+        const iid = payload && payload.instrument;
+        if (iid === state.instrument) return { message: 'Instrument unchanged.', free: true };
+        state.instrument = iid || null;
+        const lbl = iid ? (state.level.instruments.find((c) => c.id === iid) || {}).label || iid : 'none (back to OLS)';
+        return { message: `Instrumenting with: ${lbl}. Two-stage least squares makes the confounding vanish — assuming the instrument is valid, which we will simply assume.` };
       },
     },
   ];

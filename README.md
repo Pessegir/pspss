@@ -29,6 +29,12 @@ real literature — that's the joke, and the lesson.
   overdispersion** in a Poisson model — capped by a **forking-paths** boss that needs two compounding
   exploits at once. Powered by a genuine **GLMM** engine (logistic & Poisson, Laplace approximation),
   validated against lme4's `cbpp` fit.
+- **Campaign 6 — Correlation Street:** *causal-inference QRPs* — conjure an effect by mis-drawing the
+  DAG. Condition on a **collider** (post-treatment) or fall into **M-bias** (a pre-treatment collider),
+  commit the **Table 2 fallacy** (report a control variable's coefficient as your effect), abuse a
+  **weak/invalid instrument** (real two-stage least squares), shop the **adjustment set** until it's
+  significant, and finish with a **DAG capstone** that only lights up when you chain two causal sins.
+  Every "effect" here is a manufactured artefact.
 
 Campaigns unlock in order. See [DESIGN.md](DESIGN.md) for the full design.
 

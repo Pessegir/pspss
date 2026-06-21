@@ -628,6 +628,49 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return { effect: g.coef, t: g.t, df: res.dfResid, p: g.p };
   }
 
+  // Two-stage least squares (instrumental variables). One endogenous regressor `x`,
+  // one or more `instruments`, optional exogenous `controls`. Returns the IV estimate
+  // of x's effect with its proper 2SLS standard error (residuals use the ACTUAL x,
+  // not the fitted x̂). Just-identified, this equals the Wald ratio cov(z,y)/cov(z,x).
+  function tsls(y, x, instruments, controls) {
+    instruments = instruments || [];
+    controls = controls || [];
+    const n = y.length;
+    // Stage 1: x on [instruments, controls] -> fitted x̂
+    const s1 = ols(x, instruments.concat(controls));
+    const xhat = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let xh = s1.beta[0], col = 1;
+      for (const z of instruments) xh += s1.beta[col++] * z[i];
+      for (const c of controls) xh += s1.beta[col++] * c[i];
+      xhat[i] = xh;
+    }
+    // Stage 2: y on [x̂, controls] (+intercept)
+    const p = 2 + controls.length;
+    const Xhat = [];
+    for (let i = 0; i < n; i++) {
+      const row = [1, xhat[i]];
+      for (const c of controls) row.push(c[i]);
+      Xhat.push(row);
+    }
+    const XtX = matZeros(p, p), Xty = new Array(p).fill(0);
+    for (let i = 0; i < n; i++) for (let a = 0; a < p; a++) { Xty[a] += Xhat[i][a] * y[i]; for (let b = 0; b < p; b++) XtX[a][b] += Xhat[i][a] * Xhat[i][b]; }
+    const XtXinv = matInverse(XtX);
+    const beta = matVec(XtXinv, Xty);
+    // 2SLS residual variance uses the ACTUAL x (the structural equation), not x̂.
+    let sse = 0;
+    for (let i = 0; i < n; i++) {
+      let yh = beta[0] + beta[1] * x[i], col = 2;
+      for (const c of controls) yh += beta[col++] * c[i];
+      sse += (y[i] - yh) * (y[i] - yh);
+    }
+    const dfResid = n - p;
+    const sigma2 = sse / dfResid;
+    const se = Math.sqrt(Math.max(0, sigma2 * XtXinv[1][1]));
+    const t = beta[1] / se;
+    return { effect: beta[1], se, t, df: dfResid, p: tDistTwoTailedP(t, dfResid) };
+  }
+
   // ---- tiny matrix helpers (for ols) --------------------------------------
 
   function matZeros(r, c) {
@@ -786,6 +829,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     pearson,
     ols,
     ancova,
+    tsls,
     // effect size & CIs
     cohenD,
     tCritical,
@@ -3014,6 +3058,320 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 })(typeof self !== 'undefined' ? self : this);
 
 
+// ===================== levels.c6.js =====================
+/*
+ * Campaign 6 — "Correlation Street". Causal-inference QRPs: conjure (or kill) an
+ * effect by mis-specifying the causal model. Conditioning on colliders (post- and
+ * pre-treatment), the Table 2 fallacy, weak/invalid instruments, adjustment-set
+ * shopping, and a DAG capstone. Each level's evaluate(state, ctx) runs a genuine
+ * OLS / 2SLS via ctx.Stats. Registered onto PSPSS_levels.LEVELS.
+ * Proven solvable at par by src/levels.verify.js; seeds from src/tune-seeds.c6.js.
+ */
+(function (root) {
+  'use strict';
+
+  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
+  const makeRNG = RNGlib.RNG;
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const groupArrays = (rows) => { const A = [], B = []; rows.forEach((r) => (r.group === 'A' ? A : B).push(r.vals.primary)); return { A, B }; };
+
+  const LEVELS = [
+    // ----------------------------------------------------------- collider (post-treatment)
+    {
+      id: 'collider2', campaign: 'c6', title: 'Adjust Until It Appears (Reprise)',
+      rank: 'Observational Epidemiologist II', design: 'between', flaw: 'collider',
+      par: 1, seed: 1271, predictedHigher: 'B',
+      candidateControls: [
+        { id: 'age', label: 'Age (measured before treatment)' },
+        { id: 'engagement', label: 'Post-study Engagement' },
+      ],
+      extraCols: [{ field: 'age', label: 'Age' }, { field: 'engagement', label: 'Engagement' }],
+      hypothesis: 'Treatment B improves Recovery over control A.',
+      brief: 'Raw, there is nothing. Age was measured before treatment; engagement was measured after. Adjust for the one your gut calls a "confounder" and an effect blooms from a door that was closed.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 44; i++) {
+          const group = i % 2 === 0 ? 'A' : 'B';
+          const treat = group === 'B' ? 1 : 0;
+          const y = rng.normal(50, 8); // NO treatment effect
+          const age = rng.normal(40, 10); // inert pre-treatment red herring
+          const engagement = 1.4 * treat - 0.16 * (y - 50) + rng.normal(0, 1); // collider
+          parts.push({ group, vals: { primary: y }, age, engagement, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const treat = rows.map((r) => (r.group === 'B' ? 1 : 0));
+        const gm = groupArrays(rows);
+        const groups = { 'Mean A': mean(gm.A), 'Mean B': mean(gm.B) };
+        if (state.controlVar) {
+          const cov = rows.map((r) => r[state.controlVar]);
+          const r = ctx.Stats.ols(y, [treat, cov]);
+          const c = r.coefs[1];
+          const lbl = (state.level.candidateControls.find((x) => x.id === state.controlVar) || {}).label;
+          return { testName: 'OLS (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+        }
+        const r = ctx.Stats.tTestIndependent(gm.A, gm.B, false);
+        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(gm.B) >= mean(gm.A) ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+
+    // ----------------------------------------------------------- Table 2 fallacy
+    {
+      id: 'table2', campaign: 'c6', title: 'The Table 2 Fallacy',
+      rank: 'Coefficient Connoisseur', design: 'between', flaw: 'table2-fallacy',
+      par: 1, seed: 1931, predictedHigher: 'B',
+      defaultCoef: 'treat',
+      coefficients: [
+        { id: 'treat', label: 'Treatment (your hypothesis)' },
+        { id: 'smoking', label: 'Smoking (a "control" variable)' },
+      ],
+      extraCols: [{ field: 'smoking', label: 'Smoking' }],
+      hypothesis: 'Treatment B raises the outcome over control A.',
+      brief: 'Your treatment does nothing. But the model also "controls for" smoking, and smoking is wildly significant. Report THAT row of the regression table as your effect — the table never labels which coefficient is causal.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 40; i++) {
+          const group = i % 2 === 0 ? 'A' : 'B';
+          const smoking = rng.normal(0, 1);
+          const y = 50 + 4.0 * smoking + rng.normal(0, 6); // smoking predicts Y; treatment does not
+          parts.push({ group, vals: { primary: y }, smoking, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const treat = rows.map((r) => (r.group === 'B' ? 1 : 0));
+        const smoking = rows.map((r) => r.smoking);
+        const r = ctx.Stats.ols(y, [treat, smoking]);
+        const which = state.reportCoef || 'treat';
+        const idx = which === 'smoking' ? 2 : 1; // coefs[1]=treat, coefs[2]=smoking
+        const c = r.coefs[idx];
+        const gm = groupArrays(rows);
+        const lbl = which === 'smoking' ? 'Smoking' : 'Treatment';
+        return { testName: 'OLS — reporting: ' + lbl, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { ['β (' + lbl + ')']: c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+
+    // ----------------------------------------------------------- M-bias (pre-treatment collider)
+    {
+      id: 'm-bias', campaign: 'c6', title: 'The Pre-Treatment Trap',
+      rank: 'DAG Skeptic', design: 'between', flaw: 'm-bias',
+      par: 1, seed: 2006, predictedHigher: 'B',
+      candidateControls: [
+        { id: 'confounder', label: 'Baseline Covariate (inert)' },
+        { id: 'zvar', label: 'Baseline Trait Z (pre-treatment)' },
+      ],
+      extraCols: [{ field: 'zvar', label: 'Trait Z' }],
+      hypothesis: 'Treatment B raises the outcome over control A.',
+      brief: '"Adjust for everything measured before treatment," they said. Trait Z was measured at baseline — surely safe. But Z sits at the centre of an M: condition on it and a path opens between treatment and outcome that was never there.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 52; i++) {
+          const u1 = rng.normal(0, 1); // drives treatment propensity and Z
+          const u2 = rng.normal(0, 1); // drives outcome and Z
+          const group = rng.next() < 1 / (1 + Math.exp(-u1)) ? 'B' : 'A';
+          const treat = group === 'B' ? 1 : 0;
+          const zvar = u1 - u2 + rng.normal(0, 0.4); // M-collider of u1 and u2
+          const y = 50 + 5 * u2 + rng.normal(0, 4); // outcome depends on u2 only — NOT on treatment
+          const confounder = rng.normal(0, 1); // genuinely inert baseline covariate
+          parts.push({ group, vals: { primary: y }, zvar, confounder, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const treat = rows.map((r) => (r.group === 'B' ? 1 : 0));
+        const gm = groupArrays(rows);
+        const groups = { 'Mean A': mean(gm.A), 'Mean B': mean(gm.B) };
+        if (state.controlVar) {
+          const cov = rows.map((r) => r[state.controlVar]);
+          const r = ctx.Stats.ols(y, [treat, cov]);
+          const c = r.coefs[1];
+          const lbl = (state.level.candidateControls.find((x) => x.id === state.controlVar) || {}).label;
+          return { testName: 'OLS (control: ' + lbl + ')', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+        }
+        const r = ctx.Stats.tTestIndependent(gm.A, gm.B, false);
+        return { testName: 'Independent t-test (unadjusted)', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups, higher: mean(gm.B) >= mean(gm.A) ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+
+    // ----------------------------------------------------------- weak / invalid instrument
+    {
+      id: 'weak-iv', campaign: 'c6', title: 'A Convenient Instrument',
+      rank: 'Econometrician (lapsed)', design: 'between', flaw: 'weak-instrument',
+      par: 1, seed: 305, predictedHigher: 'B',
+      instruments: [
+        { id: 'distance', label: 'Distance to clinic (affects outcome too)' },
+        { id: 'lottery', label: 'Lottery number (barely affects dose)' },
+      ],
+      extraCols: [{ field: 'xendo', label: 'Dose taken' }, { field: 'distance', label: 'Distance' }],
+      hypothesis: 'Taking more of the drug (dose) raises the outcome.',
+      brief: 'OLS of dose on outcome is confounded into a flat nothing. But you have an instrument — distance to the clinic — and two-stage least squares makes confounding vanish. Never mind that distance also affects the outcome directly; the exclusion restriction is a detail.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 60; i++) {
+          const group = i % 2 === 0 ? 'A' : 'B';
+          const u = rng.normal(0, 1); // confounder of dose and outcome
+          const distance = rng.normal(0, 1); // STRONG but INVALID instrument (affects Y directly)
+          const lottery = rng.normal(0, 1); // weak instrument (barely affects dose)
+          const xendo = 1.0 * distance + 1.0 * u + 0.05 * lottery + rng.normal(0, 1); // dose
+          const y = 50 + 0 * xendo + 2 * distance - 2 * u + rng.normal(0, 4); // dose has NO effect; OLS confounding cancels
+          parts.push({ group, vals: { primary: y }, xendo, distance, lottery, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const x = rows.map((r) => r.xendo);
+        const gm = groupArrays(rows);
+        if (state.instrument) {
+          const z = rows.map((r) => r[state.instrument]);
+          const r = ctx.Stats.tsls(y, x, [z]);
+          const lbl = (state.level.instruments.find((c) => c.id === state.instrument) || {}).label;
+          return { testName: '2SLS (instrument: ' + lbl + ')', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups: { 'IV β (dose)': r.effect }, higher: r.effect >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+        }
+        const r = ctx.Stats.ols(y, [x]);
+        const c = r.coefs[1];
+        return { testName: 'OLS (dose on outcome)', statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'OLS β (dose)': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+
+    // ----------------------------------------------------------- confounder/adjustment-set search
+    {
+      id: 'confounder-roulette', campaign: 'c6', title: 'Confounder Roulette',
+      rank: 'Adjustment Enthusiast', design: 'between', flaw: 'confounder-search',
+      par: 1, seed: 427, predictedHigher: 'B',
+      specs: [
+        { label: 'unadjusted', controls: [] },
+        { label: 'control Age', controls: ['age'] },
+        { label: 'control Income', controls: ['income'] },
+        { label: 'control Mood (measured after treatment)', controls: ['mood'] },
+        { label: 'control Age + Income', controls: ['age', 'income'] },
+      ],
+      extraCols: [{ field: 'age', label: 'Age' }, { field: 'income', label: 'Income' }, { field: 'mood', label: 'Mood' }],
+      hypothesis: 'Treatment B raises the outcome over control A.',
+      brief: 'Five defensible adjustment sets, exactly one of them significant. (One of your "covariates" was measured after treatment — but a specification search will not hold that against you.)',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 40; i++) {
+          const group = i % 2 === 0 ? 'A' : 'B';
+          const treat = group === 'B' ? 1 : 0;
+          const y = rng.normal(50, 8); // NO effect
+          const age = rng.normal(40, 10);
+          const income = rng.normal(0, 1);
+          const mood = 1.3 * treat - 0.18 * (y - 50) + rng.normal(0, 1); // post-treatment collider
+          parts.push({ group, vals: { primary: y }, age, income, mood, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const idx = state.specIndex == null ? 0 : state.specIndex;
+        const spec = state.level.specs[idx];
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const treat = rows.map((r) => (r.group === 'B' ? 1 : 0));
+        const cols = [treat].concat(spec.controls.map((cid) => rows.map((r) => r[cid])));
+        const r = ctx.Stats.ols(y, cols);
+        const c = r.coefs[1];
+        const gm = groupArrays(rows);
+        return { testName: 'Spec: ' + spec.label, statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { 'Group β': c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+
+    // ----------------------------------------------------------- DAG capstone (chain)
+    {
+      id: 'the-dag', campaign: 'c6', title: 'The Whole Garden of Forking DAGs',
+      rank: 'Tenured Causal Skeptic', design: 'between', flaw: 'causal-forking',
+      par: 2, seed: 3, predictedHigher: 'B',
+      defaultCoef: 'treat',
+      coefficients: [
+        { id: 'treat', label: 'Treatment' },
+        { id: 'trait', label: 'Trait W' },
+      ],
+      candidateControls: [
+        { id: 'zcol', label: 'Latent Score Z' },
+        { id: 'agec', label: 'Age (inert)' },
+      ],
+      extraCols: [{ field: 'trait', label: 'Trait W' }, { field: 'zcol', label: 'Score Z' }],
+      hypothesis: 'Treatment B raises the outcome — or, failing that, SOMETHING does.',
+      brief: 'No single move works. The treatment is null, Trait W predicts nothing on its own, and Age is a red herring. But condition on the Latent Score AND report Trait W — only together — and a path the DAG never drew lights up.',
+      build(seed) {
+        const rng = makeRNG(seed);
+        const parts = [];
+        for (let i = 0; i < 48; i++) {
+          const group = i % 2 === 0 ? 'A' : 'B';
+          const W = rng.normal(0, 1);
+          const y = rng.normal(50, 6); // no treatment effect, no W effect
+          const zcol = W - 0.8 * (y - 50) + rng.normal(0, 0.4); // collider of W and Y
+          const agec = rng.normal(40, 10); // inert
+          parts.push({ group, vals: { primary: y }, trait: W, zcol, agec, cov: null, sub: null });
+        }
+        return { participants: parts };
+      },
+      evaluate(state, ctx) {
+        const rows = state.participants;
+        const y = rows.map((r) => r.vals.primary);
+        const treat = rows.map((r) => (r.group === 'B' ? 1 : 0));
+        const W = rows.map((r) => r.trait);
+        const cols = [treat, W];
+        const colIds = ['treat', 'trait'];
+        if (state.controlVar) { cols.push(rows.map((r) => r[state.controlVar])); colIds.push(state.controlVar); }
+        const r = ctx.Stats.ols(y, cols);
+        const which = state.reportCoef || 'treat';
+        let idx = colIds.indexOf(which);
+        if (idx < 0) idx = 0;
+        const c = r.coefs[idx + 1];
+        const gm = groupArrays(rows);
+        const lbl = which === 'trait' ? 'Trait W' : which === 'treat' ? 'Treatment' : which;
+        return { testName: 'OLS — report ' + lbl + (state.controlVar ? ' | control ' + state.controlVar : ''), statLabel: 't', statistic: c.t, df: r.dfResid, p: c.p, n: y.length, groups: { ['β (' + lbl + ')']: c.coef }, higher: c.coef >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+      },
+    },
+  ];
+
+  // Campaign 6, like C2/C5, exposes the FULL arsenal on every level: the player must
+  // DIAGNOSE the causal mis-specification and pick the right move, not click the only
+  // button. Generic decoy knobs make every flag-based tool appear; each level's
+  // evaluate() honours only its own flag, so non-matching tools are inert. All C6
+  // "effects" are manufactured — no level has a real causal effect.
+  const ALL_QRP = ['add-control', 'report-coefficient', 'use-instrument', 'spec-multiverse', 'choose-test', 'median-split', 'set-aggregation', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
+  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
+  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
+  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
+  const GENERIC_COEFS = [{ id: 'treat', label: 'Treatment' }, { id: 'covA', label: 'Covariate A' }];
+  const GENERIC_INSTRUMENTS = [{ id: 'instA', label: 'Instrument A' }, { id: 'instB', label: 'Instrument B' }];
+  LEVELS.forEach((l) => {
+    if (l.moderator === undefined) l.moderator = 'mod';
+    if (l.aggregable === undefined) l.aggregable = true;
+    if (l.tests === undefined) l.tests = GENERIC_TESTS;
+    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
+    if (l.specs === undefined) l.specs = GENERIC_SPECS;
+    if (l.coefficients === undefined) l.coefficients = GENERIC_COEFS;
+    if (l.instruments === undefined) l.instruments = GENERIC_INSTRUMENTS;
+    l.allowedTools = ALL_QRP;
+    l.truth = { exists: false }; // every C6 effect is a manufactured artefact
+  });
+
+  // register onto the shared LEVELS array
+  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
+  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
+
+  const api = { C6_LEVELS: LEVELS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PSPSS_levels_c6 = api;
+})(typeof self !== 'undefined' ? self : this);
+
+
 // ===================== campaigns.js =====================
 /*
  * Campaign grouping + gated unlock metadata. The flat level registry stays in
@@ -3053,6 +3411,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       name: 'Campaign 5 — Mixed Signals',
       subtitle: 'A (generalized) mixed-model masterclass. Random effects, fixed conclusions.',
       levelIds: ['pseudo-redux', 'slopes-redux', 'naive-df', 'within-between', 'wrong-level', 'glmm-binary', 'glmm-overdispersion', 'forking-models'],
+    },
+    {
+      id: 'c6',
+      name: 'Campaign 6 — Correlation Street',
+      subtitle: 'Causal-inference QRPs: conjure an effect by mis-drawing the DAG.',
+      levelIds: ['collider2', 'table2', 'm-bias', 'weak-iv', 'confounder-roulette', 'the-dag'],
     },
   ];
 
@@ -3127,6 +3491,9 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       dfMethod: level.defaultDf || 'finite', // 'finite' (Satterthwaite/BW) | 'z' (naive Wald)
       glmmFamily: level.defaultFamily || 'gaussian', // 'gaussian' | 'binomial' | 'poisson'
       glmmOLRE: level.defaultOLRE || false, // observation-level random effect (overdispersion)
+      // --- Campaign 6 (causal inference) flags ---
+      reportCoef: level.defaultCoef || null, // which predictor's coefficient to report (Table 2 fallacy)
+      instrument: null, // chosen instrumental variable id (use-instrument -> 2SLS)
       moves: 0,
       suspicion: 0,
       log: [],
@@ -4043,6 +4410,37 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
           (fam === 'gaussian' ? ' Normal errors on this outcome — brave.' : state.glmmOLRE ? ' Overdispersion, honestly modelled.' : '') };
       },
     },
+
+    // ====================== Campaign 6 (causal inference) tools ======================
+    // QRPs of causal mis-specification. Each sets a flag the level's evaluate() reads.
+    {
+      id: 'report-coefficient',
+      label: 'Report a Coefficient…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 14,
+      needsChoice: 'coefficient',
+      enabled: (s) => Array.isArray(s.level.coefficients) && s.level.coefficients.length > 0,
+      run(state, payload) {
+        const cid = payload && payload.coef;
+        if (cid === state.reportCoef) return { message: 'Reported coefficient unchanged.', free: true };
+        state.reportCoef = cid || null;
+        const lbl = cid ? (state.level.coefficients.find((c) => c.id === cid) || {}).label || cid : 'the treatment';
+        return { message: `Now reporting the coefficient for: ${lbl}. A regression coefficient is a regression coefficient — who's to say which one is "the effect"?` };
+      },
+    },
+    {
+      id: 'use-instrument',
+      label: 'Use an Instrumental Variable…',
+      kind: 'intervention', menu: 'Analyze', suspicion: 14,
+      needsChoice: 'instrument',
+      enabled: (s) => Array.isArray(s.level.instruments) && s.level.instruments.length > 0,
+      run(state, payload) {
+        const iid = payload && payload.instrument;
+        if (iid === state.instrument) return { message: 'Instrument unchanged.', free: true };
+        state.instrument = iid || null;
+        const lbl = iid ? (state.level.instruments.find((c) => c.id === iid) || {}).label || iid : 'none (back to OLS)';
+        return { message: `Instrumenting with: ${lbl}. Two-stage least squares makes the confounding vanish — assuming the instrument is valid, which we will simply assume.` };
+      },
+    },
   ];
 
   function id(p) {
@@ -4703,6 +5101,52 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       antidote: 'Preregister the random-effects structure and inference method; report every analytic branch.',
       verdict: 'invalid',
     },
+    // ---- Campaign 6: causal inference ----
+    'table2-fallacy': {
+      term: 'The Table 2 fallacy',
+      plain: "Interpreting a control variable's regression coefficient as its causal effect, alongside the treatment.",
+      harm: 'A coefficient adjusted for the wrong set of variables (mediators, other exposures) is not a causal effect; reporting it as one is a category error a regression table invites.',
+      citation: 'Westreich & Greenland (2013), American Journal of Epidemiology.',
+      realCase: 'Risk-factor coefficients in adjusted models are routinely (mis)read as causal across epidemiology.',
+      antidote: 'Identify the one effect you can estimate from your adjustment set; do not interpret the control coefficients causally.',
+      verdict: 'invalid',
+    },
+    'm-bias': {
+      term: 'M-bias (bad control)',
+      plain: 'Adjusting for a pre-treatment variable that is a collider on an M-shaped path between two unobserved causes.',
+      harm: 'Refutes "adjust for everything measured before treatment": conditioning on the M-collider opens a path and induces a treatment–outcome association from nothing.',
+      citation: 'Ding & Miratrix (2015), Journal of Causal Inference; Pearl (causal DAGs).',
+      realCase: 'Reflexively controlling for every available baseline covariate can add bias, not remove it.',
+      antidote: 'Choose the adjustment set from a DAG (the back-door criterion), not from what was measured first.',
+      verdict: 'invalid',
+    },
+    'weak-instrument': {
+      term: 'Weak / invalid instrument',
+      plain: 'Using an instrumental variable that barely predicts the exposure, or that violates the exclusion restriction, in a 2SLS analysis.',
+      harm: 'A weak instrument inflates variance and small-sample bias; an invalid one (that affects the outcome directly) yields a confidently significant but spurious causal estimate.',
+      citation: 'Bound, Jaeger & Baker (1995), JASA; Angrist & Pischke (2009).',
+      realCase: 'Instruments are often justified by convenience; weak/invalid ones produce notorious false IV findings.',
+      antidote: 'Check first-stage strength (F ≫ 10) and defend the exclusion restriction substantively, not by assumption.',
+      verdict: 'invalid',
+    },
+    'confounder-search': {
+      term: 'Adjustment-set shopping',
+      plain: 'Trying many covariate-adjustment sets and reporting whichever one makes the effect significant.',
+      harm: 'Across the multiverse of "defensible" adjustment sets some are significant by chance — and one may quietly include a collider that manufactures the effect.',
+      citation: 'Simmons, Nelson & Simonsohn (2011); Gelman & Loken (2013).',
+      realCase: 'Covariate-set flexibility is one of the most common (and least reported) researcher degrees of freedom.',
+      antidote: 'Pre-specify the adjustment set from a causal model; report the full specification curve.',
+      verdict: 'invalid',
+    },
+    'causal-forking': {
+      term: 'Chained causal mis-specification',
+      plain: 'Combining several causal sins (condition on a collider AND report the obliging coefficient) so that only the full chain reaches significance.',
+      harm: 'Each step is a defensible-looking fork; stacked and undisclosed they conjure an effect no single move could.',
+      citation: 'Pearl (Causality); Gelman & Loken (2013); Simmons et al. (2011).',
+      realCase: 'Pipelines accumulate adjustments and reported coefficients; the final "finding" is a path the DAG never drew.',
+      antidote: 'Draw the DAG, pre-specify the estimand and adjustment set, and report every coefficient and specification.',
+      verdict: 'invalid',
+    },
   };
 
   // Short "what you did" label per tool id, for the debrief's action list.
@@ -4738,11 +5182,14 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     // Campaign 5 — the mixed-model masterclass
     'choose-df': 'swapped to infinite-df Wald inference',
     'fit-glmm': 'chose the model family that obliged',
+    // Campaign 6 — causal inference
+    'report-coefficient': "reported a control variable's coefficient as the effect",
+    'use-instrument': 'instrumented with a convenient variable (2SLS)',
   };
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
   // for matching them and the trust verdict. Options shown come from QUIZ_OPTIONS.
-  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored'];
+  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored', 'table2-fallacy', 'm-bias', 'weak-instrument'];
 
   const QUIZ_ITEMS = [
     {
@@ -4829,6 +5276,24 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       qrps: ['overdispersion-ignored'], trust: false,
       explain: 'Unmodelled overdispersion shrinks every SE; the effect needs an observation-level random effect or a negative-binomial model to be believed.',
     },
+    {
+      id: 'q15',
+      scenario: '"The treatment coefficient was null, but in the same adjusted model the coefficient for baseline smoking was highly significant, so we conclude smoking causally raises the outcome."',
+      qrps: ['table2-fallacy'], trust: false,
+      explain: "A control variable's coefficient isn't adjusted for the right things to be its causal effect — the Table 2 fallacy.",
+    },
+    {
+      id: 'q16',
+      scenario: '"OLS of dose on outcome was flat, so we instrumented dose with distance-to-clinic. The 2SLS effect was large and significant — distance surely only affects the outcome through dose."',
+      qrps: ['weak-instrument'], trust: false,
+      explain: 'If distance affects the outcome directly (exclusion violated), the IV estimate is biased and confidently wrong.',
+    },
+    {
+      id: 'q17',
+      scenario: '"With no covariates the effect was null. Adjusting for a post-treatment engagement score, it became significant, so we report the adjusted model."',
+      qrps: ['collider'], trust: false,
+      explain: 'Engagement is post-treatment — conditioning on a collider opens a non-causal path and conjures the effect.',
+    },
   ];
 
   // Achievements. `check(ctx)` runs against a context built by the UI:
@@ -4856,6 +5321,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     { id: 'infinite-df', title: 'Infinite Confidence', desc: 'Win with the infinite-df Wald test.', check: (c) => c.event === 'win' && c.level.flaw === 'naive-df' },
     { id: 'generalized-liar', title: 'Generalized Liar', desc: 'Manufacture significance in a generalized mixed model.', check: (c) => c.event === 'win' && /clustered-binary|overdispersion-ignored/.test(c.level.flaw) },
     { id: 'forking-models', title: "Reviewer's Nightmare", desc: 'Clear the garden of forking models.', check: (c) => c.event === 'win' && c.level.flaw === 'forking-paths' },
+    // Campaign 6 — causal inference
+    { id: 'collider-artist', title: 'Collider Artist', desc: 'Conjure an effect by conditioning on a collider.', check: (c) => c.event === 'win' && /collider|m-bias/.test(c.level.flaw) },
+    { id: 'table-two', title: 'Reading the Wrong Row', desc: 'Win via the Table 2 fallacy.', check: (c) => c.event === 'win' && c.level.flaw === 'table2-fallacy' },
+    { id: 'iv-abuser', title: 'Exclusion? Never Heard of Her', desc: 'Win with a weak or invalid instrument.', check: (c) => c.event === 'win' && c.level.flaw === 'weak-instrument' },
+    { id: 'dag-boss', title: 'Correlation Street', desc: 'Clear the garden of forking DAGs.', check: (c) => c.event === 'win' && c.level.flaw === 'causal-forking' },
   ];
 
   function evaluateAchievements(ctx, already) {
@@ -4974,6 +5444,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       cite: 'Wrong family / ignored overdispersion gives optimistic SEs (Bolker et al., 2009; Harrison, 2014).',
     },
 
+    // ---- Campaign 6 (causal inference) ----
+    'report-coefficient': {
+      tip: 'A regression has many coefficients. Report whichever one is significant.',
+      cite: 'Interpreting control-variable coefficients causally is the Table 2 fallacy (Westreich & Greenland, 2013).',
+    },
+    'use-instrument': {
+      tip: 'Confounded effect? An instrument makes it vanish — valid or not.',
+      cite: 'A weak or invalid instrument yields badly biased, over-confident 2SLS estimates (Bound, Jaeger & Baker, 1995).',
+    },
+
     // ---- Campaign 3 (Bayesian) ----
     'plot-bf-robustness': { tip: 'BF as a function of the prior. Find the flattering corner.' },
     'set-prior': {
@@ -5020,6 +5500,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     'fit-lmm': 'Slopes? In THIS economy? 📉',
     'choose-df': 'Infinite degrees of freedom, baby. ♾️',
     'fit-glmm': 'Pick the distribution that vibes. 🎲',
+    'report-coefficient': 'Promote a coefficient that loves you. 📊',
+    'use-instrument': 'Summon an instrument. Validity optional. 🎻',
     'median-split': 'Snap the variable in half. 🔪',
     'add-control': 'Blame a different variable. 🧮',
     'set-aggregation': 'Zoom until it works. 🔭',
@@ -5504,6 +5986,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     if (tool.needsChoice === 'correction') return chooseFromList('Correct for Multiple Comparisons', [{ id: 'bh', label: 'Benjamini-Hochberg (FDR)' }, { id: 'bonferroni', label: 'Bonferroni (family-wise)' }], (o) => doTool('correct-comparisons', { method: o.id }));
     if (tool.needsChoice === 'df') return chooseFromList('Choose Degrees of Freedom', [{ id: 'finite', label: 'Finite (Satterthwaite / between-within)' }, { id: 'z', label: 'Wald z (infinite df)' }], (o) => doTool('choose-df', { method: o.id }));
     if (tool.needsChoice === 'glmm') return chooseFromList('Choose the Model Family', [{ id: 'gaussian', label: 'Gaussian LMM (normal errors)' }, { id: 'binomial', label: 'Logistic GLMM (binomial)' }, { id: 'poisson', label: 'Poisson GLMM' }, { id: 'poisson-olre', label: 'Poisson GLMM + observation-level RE' }], (o) => doTool('fit-glmm', o.id === 'poisson-olre' ? { family: 'poisson', olre: true } : { family: o.id }));
+    if (tool.needsChoice === 'coefficient') return chooseFromList('Report Which Coefficient?', App.state.level.coefficients, (o) => doTool('report-coefficient', { coef: o.id }));
+    if (tool.needsChoice === 'instrument') return chooseFromList('Choose an Instrument', App.state.level.instruments.concat([{ id: null, label: 'None (ordinary least squares)' }]), (o) => doTool('use-instrument', { instrument: o.id }));
     if (tool.danger) return confirmFabricate();
     doTool(toolId);
   }

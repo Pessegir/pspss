@@ -77,6 +77,18 @@ assert('raw effect not significant (covariate masks it)', S.tTestIndependent(g0,
 const olsRes = S.ols([7, 10, 13, 16, 19], [[0, 1, 2, 3, 4]]);
 approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.beta[1], 3, 1e-6);
 
+// 2SLS, just-identified: the IV estimate equals the Wald ratio cov(z,y)/cov(z,x).
+{
+  const z = [0, 1, 0, 1, 0, 1, 0, 1, 1, 0];
+  const x = [2.0, 3.1, 1.7, 4.2, 2.3, 3.6, 1.9, 4.8, 3.9, 2.1]; // endogenous
+  const y = [5.1, 7.0, 4.4, 9.1, 5.5, 7.9, 4.0, 9.8, 8.3, 4.9];
+  const cov = (a, b) => { const ma = S.mean(a), mb = S.mean(b); let s = 0; for (let i = 0; i < a.length; i++) s += (a[i] - ma) * (b[i] - mb); return s / (a.length - 1); };
+  const wald = cov(z, y) / cov(z, x);
+  const iv = S.tsls(y, x, [z]);
+  approx('2SLS == Wald ratio cov(z,y)/cov(z,x)', iv.effect, wald, 1e-6);
+  assert('2SLS returns a finite SE', Number.isFinite(iv.se) && iv.se > 0);
+}
+
 console.log('\nEffect size & confidence intervals:');
 // d: groups offset by exactly 1 pooled SD -> d = 1
 approx('cohenD ~ 1', S.cohenD([1, 2, 3, 4, 5], [1, 2, 3, 4, 5].map((x) => x + Math.sqrt(2.5))), 1, 1e-6);

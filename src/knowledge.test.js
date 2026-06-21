@@ -5,6 +5,7 @@ require('./levels.c2');
 require('./levels.c3');
 require('./levels.c4');
 require('./levels.c5');
+require('./levels.c6');
 const { LEVELS } = require('./levels');
 const K = require('./knowledge');
 const E = require('./engine');

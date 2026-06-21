@@ -67,6 +67,7 @@ require('./levels.c2');
 require('./levels.c3');
 require('./levels.c4');
 require('./levels.c5');
+require('./levels.c6');
 global.PSPSS_campaigns = require('./campaigns');
 global.PSPSS_engine = require('./engine');
 global.PSPSS_charts = require('./charts');

@@ -37,6 +37,12 @@
       subtitle: 'A (generalized) mixed-model masterclass. Random effects, fixed conclusions.',
       levelIds: ['pseudo-redux', 'slopes-redux', 'naive-df', 'within-between', 'wrong-level', 'glmm-binary', 'glmm-overdispersion', 'forking-models'],
     },
+    {
+      id: 'c6',
+      name: 'Campaign 6 — Correlation Street',
+      subtitle: 'Causal-inference QRPs: conjure an effect by mis-drawing the DAG.',
+      levelIds: ['collider2', 'table2', 'm-bias', 'weak-iv', 'confounder-roulette', 'the-dag'],
+    },
   ];
 
   const api = { CAMPAIGNS };
