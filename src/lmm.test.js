@@ -62,5 +62,23 @@ console.log('\nRandom-slope model: dropping the slope is anticonservative:');
   assert('intercept-only p < maximal p (the abuse)', interceptOnly.p < maximal.p, `intOnly=${interceptOnly.p.toFixed(4)}, maximal=${maximal.p.toFixed(4)}`);
 }
 
+console.log('\nEBLUP cluster intercepts: shrinkage, sum-to-zero, ICC:');
+{
+  const { y, groups, nGroups } = buildBalanced(7, 8, 6, 0, 8, 4);
+  const lmm = LMM.fit(y, [], groups); // intercept-only random intercept
+  assert('one BLUP per cluster', lmm.blups.length === nGroups, `got ${lmm.blups.length}`);
+  const sum = lmm.blups.reduce((a, b) => a + b.est, 0);
+  approx('BLUPs sum to ~0', sum, 0, 1e-6);
+  // shrinkage: every BLUP is pulled toward 0 relative to the raw group-mean deviation
+  const grand = S.mean(y);
+  let shrinks = true;
+  lmm.blups.forEach((b, g) => {
+    const raw = S.mean(y.filter((_, i) => groups[i] === g)) - grand;
+    if (Math.abs(b.est) > Math.abs(raw) + 1e-9) shrinks = false;
+  });
+  assert('|BLUP| <= |raw deviation| (partial pooling)', shrinks);
+  assert('ICC in (0,1)', lmm.icc > 0 && lmm.icc < 1, `icc=${lmm.icc.toFixed(3)}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);

@@ -65,6 +65,7 @@ function close(a, b, tol) { return Math.abs(a - b) <= tol; }
   ok('cbpp period3 ~ -1.129', close(f.betas[2], -1.129, 0.06), 'p3=' + f.betas[2].toFixed(3));
   ok('cbpp period4 ~ -1.580', close(f.betas[3], -1.580, 0.07), 'p4=' + f.betas[3].toFixed(3));
   ok('cbpp herd SD ~ 0.642', close(f.varComps.groupSD, 0.642, 0.06), 'sd=' + f.varComps.groupSD.toFixed(3));
+  ok('cbpp returns one BLUP per herd (15)', f.blups.length === 15, 'blups=' + f.blups.length);
   // intercept SE ~ 0.231 (looser tolerance for the hand-rolled covariance)
   ok('cbpp intercept SE ~ 0.231', close(f.ses[0], 0.231, 0.05), 'se0=' + f.ses[0].toFixed(3));
 }

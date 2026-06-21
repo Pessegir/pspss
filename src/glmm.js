@@ -280,6 +280,16 @@
     const z = beta / se;
     const sd = factors.map((_, k) => Math.exp(theta[k]));
 
+    // Conditional modes (BLUPs) ± posterior SD for the primary grouping factor.
+    const tau0 = sd[0];
+    const f0 = factors[0];
+    const counts = new Array(f0.nLevels).fill(0);
+    for (const lv of f0.levelOf) counts[lv]++;
+    const blups = [];
+    for (let gi = 0; gi < f0.nLevels; gi++) {
+      blups.push({ est: tau0 * fitp.u[gi], err: tau0 * Math.sqrt(Math.max(0, inv[gi][gi])), n: counts[gi] });
+    }
+
     return {
       beta,
       se,
@@ -292,6 +302,7 @@
       family,
       nGroups: factors[0].nLevels,
       testCol: testCol - 1,
+      blups,
     };
   }
 

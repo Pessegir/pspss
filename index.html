@@ -1096,6 +1096,28 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     if (isBetween(testCol)) df = Math.max(1, nGroups - pBetween);
     else df = Math.max(1, n - nGroups - pWithin);
 
+    // EBLUP cluster random intercepts (+ posterior SD) and the ICC, for the
+    // random-intercept model — these power the shrinkage / caterpillar diagnostic.
+    let blups = null, icc = null;
+    if (!slope) {
+      const sigma2 = params.sigma2, g00 = params.g00;
+      icc = g00 + sigma2 > 0 ? g00 / (g00 + sigma2) : 0;
+      const fitted = X.map((row) => dot(row, g.beta));
+      const byG = new Map();
+      for (let i = 0; i < n; i++) {
+        const gid = groups[i];
+        if (!byG.has(gid)) byG.set(gid, []);
+        byG.get(gid).push(y[i] - fitted[i]);
+      }
+      blups = [];
+      byG.forEach((res, gid) => {
+        const ng = res.length;
+        const dbar = res.reduce((a, b) => a + b, 0) / ng;
+        const lam = (ng * g00) / (sigma2 + ng * g00); // shrinkage factor
+        blups.push({ group: gid, est: lam * dbar, err: Math.sqrt(g00 * sigma2 / (sigma2 + ng * g00)), n: ng });
+      });
+    }
+
     return {
       beta,
       se,
@@ -1107,6 +1129,8 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       reml: g.reml,
       testCol: testCol - 1,
       nGroups,
+      blups,
+      icc,
     };
   }
 
@@ -1399,6 +1423,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     const z = beta / se;
     const sd = factors.map((_, k) => Math.exp(theta[k]));
 
+    // Conditional modes (BLUPs) ± posterior SD for the primary grouping factor.
+    const tau0 = sd[0];
+    const f0 = factors[0];
+    const counts = new Array(f0.nLevels).fill(0);
+    for (const lv of f0.levelOf) counts[lv]++;
+    const blups = [];
+    for (let gi = 0; gi < f0.nLevels; gi++) {
+      blups.push({ est: tau0 * fitp.u[gi], err: tau0 * Math.sqrt(Math.max(0, inv[gi][gi])), n: counts[gi] });
+    }
+
     return {
       beta,
       se,
@@ -1411,6 +1445,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       family,
       nGroups: factors[0].nLevels,
       testCol: testCol - 1,
+      blups,
     };
   }
 
@@ -3489,6 +3524,23 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       },
     },
     {
+      id: 'plot-random-effects',
+      label: 'Random-Effects Caterpillar',
+      kind: 'diagnostic',
+      menu: 'Graphs',
+      enabled: (s) => s.design === 'clustered' && Array.isArray(s.observations) && s.observations.length > 0,
+      run(state) {
+        const o = obsArrays(state);
+        const fit = LMM.fit(o.y, [], o.subject); // intercept-only random intercept
+        const pts = (fit.blups || []).map((b) => ({ est: b.est, err: b.err }));
+        const icc = fit.icc != null ? fit.icc.toFixed(2) : '—';
+        return {
+          message: `Random-effects caterpillar rendered. Each cluster's estimate is shrunk toward 0 (partial pooling); an ICC of ≈ ${icc} of the variance sits between clusters — which is exactly why the rows aren't independent.`,
+          chart: { fn: 'caterpillar', args: [pts, { title: 'Cluster random intercepts (BLUP ± SD)', xlabel: 'cluster (sorted)' }] },
+        };
+      },
+    },
+    {
       id: 'plot-bf-robustness',
       label: 'Bayes-Factor Robustness Curve',
       kind: 'diagnostic',
@@ -4690,7 +4742,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
   // for matching them and the trust verdict. Options shown come from QUIZ_OPTIONS.
-  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width'];
+  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored'];
 
   const QUIZ_ITEMS = [
     {
@@ -4753,6 +4805,30 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       qrps: ['prior-width'], trust: false,
       explain: 'The prior was tuned after seeing the data to clear the BF threshold — prior-hacking.',
     },
+    {
+      id: 'q11',
+      scenario: '"lme4 wouldn\'t print a p-value for our 6-cluster model, so we used the Wald z (t with infinite df). The effect was significant (p = .03)."',
+      qrps: ['naive-df'], trust: false,
+      explain: 'With few clusters the df are small and uncertain; the infinite-df z is anticonservative — exactly why lme4 withholds the p-value.',
+    },
+    {
+      id: 'q12',
+      scenario: '"Pupil-by-pupil, more tutoring predicted slightly lower scores, but regressing on school averages flipped it positive and significant, so we report the school-level result."',
+      qrps: ['within-between-conflation'], trust: false,
+      explain: 'The within- and between-cluster slopes differ in sign (Simpson); aggregating to means reports only the confounded between-effect.',
+    },
+    {
+      id: 'q13',
+      scenario: '"Each patient gave six yes/no responses; pooling all 120 trials into one logistic regression, the treatment was significant (p = .01)."',
+      qrps: ['clustered-binary'], trust: false,
+      explain: 'Trials within a patient are correlated; a pooled logistic regression underestimates the SE — pseudoreplication on the logit scale. Use a logistic GLMM.',
+    },
+    {
+      id: 'q14',
+      scenario: '"Our count outcome was far more variable than a Poisson allows, but the plain Poisson model gave tiny standard errors and a clear dose effect (p < .001)."',
+      qrps: ['overdispersion-ignored'], trust: false,
+      explain: 'Unmodelled overdispersion shrinks every SE; the effect needs an observation-level random effect or a negative-binomial model to be believed.',
+    },
   ];
 
   // Achievements. `check(ctx)` runs against a context built by the UI:
@@ -4775,6 +4851,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     { id: 'powered', title: 'Adequately Powered', desc: 'Clear the power-analysis level.', check: (c) => c.event === 'win' && c.level.flaw === 'power' },
     { id: 'support-null', title: 'Evidence of Absence', desc: 'Defend a null with an equivalence test.', check: (c) => c.event === 'win' && c.level.flaw === 'equivalence' },
     { id: 'replicator', title: 'The Replicator', desc: 'Complete the preregistered replication.', check: (c) => c.event === 'win' && c.level.flaw === 'replication' },
+    // Campaign 5 — the mixed-model masterclass
+    { id: 'minimal', title: 'Keep It Minimal', desc: 'Win by dropping a justified random slope.', check: (c) => c.event === 'win' && c.level.flaw === 'random-slopes' },
+    { id: 'infinite-df', title: 'Infinite Confidence', desc: 'Win with the infinite-df Wald test.', check: (c) => c.event === 'win' && c.level.flaw === 'naive-df' },
+    { id: 'generalized-liar', title: 'Generalized Liar', desc: 'Manufacture significance in a generalized mixed model.', check: (c) => c.event === 'win' && /clustered-binary|overdispersion-ignored/.test(c.level.flaw) },
+    { id: 'forking-models', title: "Reviewer's Nightmare", desc: 'Clear the garden of forking models.', check: (c) => c.event === 'win' && c.level.flaw === 'forking-paths' },
   ];
 
   function evaluateAchievements(ctx, already) {
@@ -4810,6 +4891,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     'check-covariate': { tip: 'See whether something else explains your outcome.' },
     'check-subgroups': { tip: 'Slice the sample and peek at each slice.' },
     'peek-all-dvs': { tip: 'Run every outcome and see which one "worked."' },
+    'plot-random-effects': { tip: 'See each cluster shrink toward the average — the partial pooling you ignored.' },
 
     'refine-sample': {
       tip: "You'll define 'anomalous' AFTER seeing who's in the way.",

@@ -459,6 +459,23 @@
       },
     },
     {
+      id: 'plot-random-effects',
+      label: 'Random-Effects Caterpillar',
+      kind: 'diagnostic',
+      menu: 'Graphs',
+      enabled: (s) => s.design === 'clustered' && Array.isArray(s.observations) && s.observations.length > 0,
+      run(state) {
+        const o = obsArrays(state);
+        const fit = LMM.fit(o.y, [], o.subject); // intercept-only random intercept
+        const pts = (fit.blups || []).map((b) => ({ est: b.est, err: b.err }));
+        const icc = fit.icc != null ? fit.icc.toFixed(2) : '—';
+        return {
+          message: `Random-effects caterpillar rendered. Each cluster's estimate is shrunk toward 0 (partial pooling); an ICC of ≈ ${icc} of the variance sits between clusters — which is exactly why the rows aren't independent.`,
+          chart: { fn: 'caterpillar', args: [pts, { title: 'Cluster random intercepts (BLUP ± SD)', xlabel: 'cluster (sorted)' }] },
+        };
+      },
+    },
+    {
       id: 'plot-bf-robustness',
       label: 'Bayes-Factor Robustness Curve',
       kind: 'diagnostic',

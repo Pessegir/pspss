@@ -15,6 +15,7 @@
     'check-covariate': { tip: 'See whether something else explains your outcome.' },
     'check-subgroups': { tip: 'Slice the sample and peek at each slice.' },
     'peek-all-dvs': { tip: 'Run every outcome and see which one "worked."' },
+    'plot-random-effects': { tip: 'See each cluster shrink toward the average — the partial pooling you ignored.' },
 
     'refine-sample': {
       tip: "You'll define 'anomalous' AFTER seeing who's in the way.",

@@ -381,7 +381,7 @@
 
   // "Spot the QRP" quiz. `qrps` are QRP_INFO keys present; the player wins points
   // for matching them and the trust verdict. Options shown come from QUIZ_OPTIONS.
-  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width'];
+  const QUIZ_OPTIONS = ['optional-stopping', 'outlier', 'multiverse', 'subgroup', 'wrong-direction', 'collider', 'median-split', 'spec-curve', 'pseudoreplication', 'prior-width', 'naive-df', 'within-between-conflation', 'clustered-binary', 'overdispersion-ignored'];
 
   const QUIZ_ITEMS = [
     {
@@ -444,6 +444,30 @@
       qrps: ['prior-width'], trust: false,
       explain: 'The prior was tuned after seeing the data to clear the BF threshold — prior-hacking.',
     },
+    {
+      id: 'q11',
+      scenario: '"lme4 wouldn\'t print a p-value for our 6-cluster model, so we used the Wald z (t with infinite df). The effect was significant (p = .03)."',
+      qrps: ['naive-df'], trust: false,
+      explain: 'With few clusters the df are small and uncertain; the infinite-df z is anticonservative — exactly why lme4 withholds the p-value.',
+    },
+    {
+      id: 'q12',
+      scenario: '"Pupil-by-pupil, more tutoring predicted slightly lower scores, but regressing on school averages flipped it positive and significant, so we report the school-level result."',
+      qrps: ['within-between-conflation'], trust: false,
+      explain: 'The within- and between-cluster slopes differ in sign (Simpson); aggregating to means reports only the confounded between-effect.',
+    },
+    {
+      id: 'q13',
+      scenario: '"Each patient gave six yes/no responses; pooling all 120 trials into one logistic regression, the treatment was significant (p = .01)."',
+      qrps: ['clustered-binary'], trust: false,
+      explain: 'Trials within a patient are correlated; a pooled logistic regression underestimates the SE — pseudoreplication on the logit scale. Use a logistic GLMM.',
+    },
+    {
+      id: 'q14',
+      scenario: '"Our count outcome was far more variable than a Poisson allows, but the plain Poisson model gave tiny standard errors and a clear dose effect (p < .001)."',
+      qrps: ['overdispersion-ignored'], trust: false,
+      explain: 'Unmodelled overdispersion shrinks every SE; the effect needs an observation-level random effect or a negative-binomial model to be believed.',
+    },
   ];
 
   // Achievements. `check(ctx)` runs against a context built by the UI:
@@ -466,6 +490,11 @@
     { id: 'powered', title: 'Adequately Powered', desc: 'Clear the power-analysis level.', check: (c) => c.event === 'win' && c.level.flaw === 'power' },
     { id: 'support-null', title: 'Evidence of Absence', desc: 'Defend a null with an equivalence test.', check: (c) => c.event === 'win' && c.level.flaw === 'equivalence' },
     { id: 'replicator', title: 'The Replicator', desc: 'Complete the preregistered replication.', check: (c) => c.event === 'win' && c.level.flaw === 'replication' },
+    // Campaign 5 — the mixed-model masterclass
+    { id: 'minimal', title: 'Keep It Minimal', desc: 'Win by dropping a justified random slope.', check: (c) => c.event === 'win' && c.level.flaw === 'random-slopes' },
+    { id: 'infinite-df', title: 'Infinite Confidence', desc: 'Win with the infinite-df Wald test.', check: (c) => c.event === 'win' && c.level.flaw === 'naive-df' },
+    { id: 'generalized-liar', title: 'Generalized Liar', desc: 'Manufacture significance in a generalized mixed model.', check: (c) => c.event === 'win' && /clustered-binary|overdispersion-ignored/.test(c.level.flaw) },
+    { id: 'forking-models', title: "Reviewer's Nightmare", desc: 'Clear the garden of forking models.', check: (c) => c.event === 'win' && c.level.flaw === 'forking-paths' },
   ];
 
   function evaluateAchievements(ctx, already) {

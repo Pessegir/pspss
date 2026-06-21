@@ -288,6 +288,28 @@
     if (isBetween(testCol)) df = Math.max(1, nGroups - pBetween);
     else df = Math.max(1, n - nGroups - pWithin);
 
+    // EBLUP cluster random intercepts (+ posterior SD) and the ICC, for the
+    // random-intercept model — these power the shrinkage / caterpillar diagnostic.
+    let blups = null, icc = null;
+    if (!slope) {
+      const sigma2 = params.sigma2, g00 = params.g00;
+      icc = g00 + sigma2 > 0 ? g00 / (g00 + sigma2) : 0;
+      const fitted = X.map((row) => dot(row, g.beta));
+      const byG = new Map();
+      for (let i = 0; i < n; i++) {
+        const gid = groups[i];
+        if (!byG.has(gid)) byG.set(gid, []);
+        byG.get(gid).push(y[i] - fitted[i]);
+      }
+      blups = [];
+      byG.forEach((res, gid) => {
+        const ng = res.length;
+        const dbar = res.reduce((a, b) => a + b, 0) / ng;
+        const lam = (ng * g00) / (sigma2 + ng * g00); // shrinkage factor
+        blups.push({ group: gid, est: lam * dbar, err: Math.sqrt(g00 * sigma2 / (sigma2 + ng * g00)), n: ng });
+      });
+    }
+
     return {
       beta,
       se,
@@ -299,6 +321,8 @@
       reml: g.reml,
       testCol: testCol - 1,
       nGroups,
+      blups,
+      icc,
     };
   }
 
