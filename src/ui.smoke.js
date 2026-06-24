@@ -105,6 +105,14 @@ check('debrief shows a truth reveal panel', q('.reveal').length > 0);
 check('debrief cites a method', modalText().includes('Codex') || /20\d\d/.test(modalText()));
 clickBtn('Campaign Map');
 
+console.log('\nGauntlet (random-sample replay):');
+card('The One Bad Apple').fire('click');
+clickBtn('Gauntlet');
+check('gauntlet briefing warns it is a fresh random sample', q('.gauntlet-note').length > 0);
+check('gauntlet pill rendered behind the briefing', appNode.textContent.includes('GAUNTLET'));
+clickBtn('Back to Campaign');
+check('returns to the campaign map', appNode.textContent.includes('Campaign 1'));
+
 console.log('\nC2 — full menu, must pick the right analysis (Count Every Mouse Twice):');
 check('campaign 2 listed', appNode.textContent.includes('Campaign 2 — The Methods Section'));
 card('Count Every Mouse Twice').fire('click');
