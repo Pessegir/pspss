@@ -551,9 +551,22 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     });
     const W = Math.min(wPlus, wMinus);
     const muW = (n * (n + 1)) / 4;
-    const sigmaW = Math.sqrt((n * (n + 1) * (2 * n + 1)) / 24);
-    const z = (W - muW + 0.5) / sigmaW;
-    return { W, z, p: normalTwoTailedP(z) };
+    // Tie correction: subtract Σ(tⱼ³ − tⱼ)/48 from the variance for groups of
+    // tied absolute differences (the MWU path above already corrects for ties;
+    // this keeps the two non-parametric tests consistent).
+    const absCounts = {};
+    diffs.forEach((d, i) => {
+      const key = absRanks[i];
+      absCounts[key] = (absCounts[key] || 0) + 1;
+    });
+    let tieTerm = 0;
+    Object.values(absCounts).forEach((c) => {
+      if (c > 1) tieTerm += c * c * c - c;
+    });
+    const varW = (n * (n + 1) * (2 * n + 1)) / 24 - tieTerm / 48;
+    const sigmaW = Math.sqrt(Math.max(0, varW));
+    const z = sigmaW > 0 ? (W - muW + 0.5) / sigmaW : 0;
+    return { W, z, p: sigmaW > 0 ? normalTwoTailedP(z) : 1 };
   }
 
   // Pearson correlation with t-based two-tailed p-value.
@@ -668,7 +681,33 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     const sigma2 = sse / dfResid;
     const se = Math.sqrt(Math.max(0, sigma2 * XtXinv[1][1]));
     const t = beta[1] / se;
-    return { effect: beta[1], se, t, df: dfResid, p: tDistTwoTailedP(t, dfResid) };
+    // First-stage F for the EXCLUDED instruments (the weak-instrument diagnostic;
+    // rule of thumb F < 10 ⇒ weak ⇒ 2SLS is biased and over-confident). Compares
+    // the stage-1 fit with instruments against the controls-only restricted fit.
+    const firstStageF = (function () {
+      const q = instruments.length;
+      if (q === 0) return null;
+      const rssOf = (cols) => {
+        const fit = ols(x, cols);
+        let rss = 0;
+        for (let i = 0; i < n; i++) {
+          let xh = fit.beta[0];
+          for (let c = 0; c < cols.length; c++) xh += fit.beta[c + 1] * cols[c][i];
+          rss += (x[i] - xh) * (x[i] - xh);
+        }
+        return rss;
+      };
+      const rssFull = rssOf(instruments.concat(controls));
+      const rssRestr = controls.length ? rssOf(controls) : (function () {
+        const mx = x.reduce((s, v) => s + v, 0) / n;
+        return x.reduce((s, v) => s + (v - mx) * (v - mx), 0);
+      })();
+      const kFull = 1 + q + controls.length;
+      const dfF = n - kFull;
+      if (dfF <= 0 || rssFull <= 0) return null;
+      return ((rssRestr - rssFull) / q) / (rssFull / dfF);
+    })();
+    return { effect: beta[1], se, t, df: dfResid, p: tDistTwoTailedP(t, dfResid), firstStageF };
   }
 
   // ---- tiny matrix helpers (for ols) --------------------------------------
@@ -3242,7 +3281,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
           const z = rows.map((r) => r[state.instrument]);
           const r = ctx.Stats.tsls(y, x, [z]);
           const lbl = (state.level.instruments.find((c) => c.id === state.instrument) || {}).label;
-          return { testName: '2SLS (instrument: ' + lbl + ')', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups: { 'IV β (dose)': r.effect }, higher: r.effect >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+          const F = r.firstStageF;
+          const weakNote = F != null
+            ? '  [first-stage F = ' + F.toFixed(1) + (F < 10 ? ' — WEAK instrument: 2SLS is biased and over-confident]' : ']')
+            : '';
+          return { testName: '2SLS (instrument: ' + lbl + ')' + weakNote, statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups: { 'IV β (dose)': r.effect }, higher: r.effect >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
         }
         const r = ctx.Stats.ols(y, [x]);
         const c = r.coefs[1];

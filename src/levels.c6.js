@@ -181,7 +181,11 @@
           const z = rows.map((r) => r[state.instrument]);
           const r = ctx.Stats.tsls(y, x, [z]);
           const lbl = (state.level.instruments.find((c) => c.id === state.instrument) || {}).label;
-          return { testName: '2SLS (instrument: ' + lbl + ')', statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups: { 'IV β (dose)': r.effect }, higher: r.effect >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
+          const F = r.firstStageF;
+          const weakNote = F != null
+            ? '  [first-stage F = ' + F.toFixed(1) + (F < 10 ? ' — WEAK instrument: 2SLS is biased and over-confident]' : ']')
+            : '';
+          return { testName: '2SLS (instrument: ' + lbl + ')' + weakNote, statLabel: 't', statistic: r.t, df: r.df, p: r.p, n: y.length, groups: { 'IV β (dose)': r.effect }, higher: r.effect >= 0 ? 'B' : 'A', aArr: gm.A, bArr: gm.B };
         }
         const r = ctx.Stats.ols(y, [x]);
         const c = r.coefs[1];

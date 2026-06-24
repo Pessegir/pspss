@@ -59,6 +59,18 @@ console.log('\nWilcoxon signed-rank:');
 const wsr = S.wilcoxonSignedRank([10, 12, 14, 16, 18], [1, 2, 3, 4, 5]);
 assert('W = 0 for all-positive diffs', wsr.W === 0);
 assert('p < 0.1 for consistent diffs', wsr.p < 0.1);
+// Tie correction: tied absolute differences shrink the variance, so a tied
+// dataset must give a SMALLER p than the no-tie formula would. Diffs here are
+// {3,3,3,-1,-1}: |diff| has ties of size 3 and 2.
+{
+  const tied = S.wilcoxonSignedRank([4, 5, 6, 0, 1], [1, 2, 3, 1, 2]);
+  // Reproduce the OLD (uncorrected) p for the same W to prove correction moved it.
+  const n = 5, muW = (n * (n + 1)) / 4;
+  const sigmaNoTie = Math.sqrt((n * (n + 1) * (2 * n + 1)) / 24);
+  const zNoTie = (tied.W - muW + 0.5) / sigmaNoTie;
+  const pNoTie = 2 * (1 - S.normalCDF(Math.abs(zNoTie)));
+  assert('Wilcoxon tie correction shrinks p vs. uncorrected', tied.p < pNoTie);
+}
 
 console.log('\nPearson correlation:');
 const pc = S.pearson([1, 2, 3, 4, 5], [1, 2, 3, 4, 5]);
@@ -87,6 +99,24 @@ approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.bet
   const iv = S.tsls(y, x, [z]);
   approx('2SLS == Wald ratio cov(z,y)/cov(z,x)', iv.effect, wald, 1e-6);
   assert('2SLS returns a finite SE', Number.isFinite(iv.se) && iv.se > 0);
+  assert('2SLS reports a finite first-stage F', Number.isFinite(iv.firstStageF) && iv.firstStageF >= 0);
+}
+// First-stage F separates a STRONG instrument from a WEAK one.
+{
+  const rng = (s) => { let a = s; return () => { a = (a * 1103515245 + 12345) & 0x7fffffff; return a / 0x7fffffff; }; };
+  const r = rng(42);
+  const n = 200, zStrong = [], zWeak = [], x = [], y = [];
+  for (let i = 0; i < n; i++) {
+    const u = r() - 0.5;              // confounder / structural noise
+    const zs = r() < 0.5 ? 0 : 1;     // strong instrument
+    const zw = r() < 0.5 ? 0 : 1;     // irrelevant (weak) instrument
+    const xi = 2 * zs + 0.02 * zw + u + 0.3 * (r() - 0.5);
+    zStrong.push(zs); zWeak.push(zw); x.push(xi); y.push(1.5 * xi + 2 * u + 0.2 * (r() - 0.5));
+  }
+  const strong = S.tsls(y, x, [zStrong]);
+  const weak = S.tsls(y, x, [zWeak]);
+  assert('strong instrument: first-stage F > 10', strong.firstStageF > 10);
+  assert('weak instrument: first-stage F < 10', weak.firstStageF < 10);
 }
 
 console.log('\nEffect size & confidence intervals:');
