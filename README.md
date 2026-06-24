@@ -1,5 +1,7 @@
 # PSPSS — *Probably Significant Statistical Software*
 
+▶️ **[Play it in your browser](https://pessegir.github.io/pspss/)** — no install, one self-contained page.
+
 A satirical puzzle game about p-hacking and the replication crisis. Each "study" is rigged so the
 honest analysis fails; you torture it to significance in the fewest moves by applying real
 Questionable Research Practices with euphemistic names. The statistics under the hood are **real**
@@ -119,3 +121,8 @@ node src/bundle.smoke.js    # runs the built index.html the way a browser does (
 
 `src/tune-seeds*.js` search for per-level RNG seeds; re-run only after changing a data generator,
 then bake the seeds back into the level and re-run `levels.verify.js`.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Use, fork, and teach with it freely; the educational citations in the
+Methods Codex point to the original papers, which carry their own terms.
