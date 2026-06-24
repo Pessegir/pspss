@@ -4550,6 +4550,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       move: isMove,
       chart: result.chart || null,
       toolId: tool.id,
+      payload: payload || null, // kept so the pipeline can be replayed (stress-test)
     });
 
     // Fabrication can get you caught immediately.
@@ -4572,6 +4573,50 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return { state, analysis: analyze(state), event: 'honest' };
   }
 
+  // --- replication stress-test ----------------------------------------------
+  // Replays a recorded pipeline (the player's exact intervention sequence) across
+  // `nReps` FRESH samples from the same data-generating process and reports how
+  // often that pipeline "wins". This is the only view in the game that shows a
+  // QRP's true cost: a false-positive *rate*, not a single rigged draw. For a
+  // manufactured-null level the honest pipeline sits near α; a QRP pipeline runs
+  // hotter. `actions` = [{toolId, payload}] (payload optional).
+  function simulateReplications(level, actions, opts) {
+    opts = opts || {};
+    const nReps = opts.nReps || 200;
+    const mode = opts.mode || 'tenure';
+    // Walk a fresh seed range well away from the level's pinned (rigged) seed so
+    // we sample the generator honestly. A prime stride decorrelates the streams.
+    const base = opts.baseSeed != null ? opts.baseSeed : ((level.seed || 1) + 500000);
+    const step = opts.step || 7919;
+    const pvals = [];
+    let sig = 0, wins = 0, errors = 0;
+    for (let i = 0; i < nReps; i++) {
+      const seed = (base + i * step) >>> 0;
+      try {
+        const st = newState(level, seed, mode);
+        for (const a of actions || []) {
+          st.finished = null; // replay the whole pipeline even past an early win
+          applyTool(st, a.toolId, a.payload);
+        }
+        st.finished = null;
+        const an = analyze(st);
+        if (an.metricKind === 'p' && Number.isFinite(an.metricValue)) pvals.push(an.metricValue);
+        if (an.significant) sig++;
+        if (an.win) wins++;
+      } catch (e) {
+        errors++;
+      }
+    }
+    const n = nReps - errors;
+    return {
+      n, nReps, errors,
+      sigRate: n ? sig / n : 0, // significant in either direction
+      winRate: n ? wins / n : 0, // significant AND in the predicted direction
+      pvals,
+      truth: level.truth || null,
+    };
+  }
+
   function stars(state) {
     const par = state.level.par;
     let s;
@@ -4582,7 +4627,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     return { stars: s, clean };
   }
 
-  const api = { newState, analyze, applyTool, reportNull, getArrays, obsArrays, stars, TOOLS, toolEnabled, finalize };
+  const api = { newState, analyze, applyTool, reportNull, getArrays, obsArrays, stars, TOOLS, toolEnabled, finalize, simulateReplications };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
@@ -6551,6 +6596,46 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       reveal.innerHTML = '⚠️ <b>The effect was real — but your route to it was invalid.</b> A reviewer can\'t distinguish your "significant" result from luck, and it may not replicate.';
     }
     body.appendChild(reveal);
+
+    // Replication stress-test: replay THIS pipeline across fresh samples and show
+    // how often it "wins". The honest payoff of the whole game — a false-positive
+    // *rate*, not the single rigged draw you just saw.
+    if (E.simulateReplications && event !== 'retract') {
+      const actions = App.state.log
+        .filter((e) => e.move && e.toolId && e.toolId !== 'fabricate')
+        .map((e) => ({ toolId: e.toolId, payload: e.payload }));
+      const stress = el('div', { class: 'dbf' });
+      const btn = el('button', { class: 'btn ghost' }, [
+        actions.length ? '🔁 Stress-test this pipeline (200 fresh samples)' : '🔁 How often does the honest analysis "work"? (200 samples)',
+      ]);
+      btn.onclick = () => {
+        btn.disabled = true; btn.textContent = 'Re-running 200 studies…';
+        setTimeout(() => {
+          let r;
+          try { r = E.simulateReplications(lv, actions, { nReps: 200, mode: App.mode }); }
+          catch (err) { stress.innerHTML = '<b>Stress-test unavailable for this level.</b>'; return; }
+          const rate = (100 * r.winRate).toFixed(0);
+          const manufactured = lv.truth && lv.truth.exists === false;
+          const verdict = actions.length
+            ? `Your pipeline declared victory in <b>${rate}%</b> of ${r.n} fresh datasets` +
+              (manufactured
+                ? ` — where the true effect is <b>zero</b>. That is your false-positive rate. A clean analysis would sit near 5%.`
+                : `. The effect is real, so this is the pipeline's power — but a reviewer can't tell power from luck on any single study.`)
+            : `The honest analysis crossed p&lt;.05 in <b>${rate}%</b> of ${r.n} fresh datasets` +
+              (manufactured ? ` — exactly the ~5% false positives α permits.` : `, i.e. its true power.`);
+          stress.innerHTML = '';
+          stress.appendChild(el('div', { html: verdict }));
+          if (r.pvals && r.pvals.length && typeof PSPSS_charts !== 'undefined') {
+            const sig = r.pvals.filter((p) => p < 0.05);
+            const fig = el('div');
+            try { fig.appendChild(PSPSS_charts.pcurve(sig, { title: 'p-curve of YOUR pipeline (significant runs)' })); } catch (e) {}
+            stress.appendChild(fig);
+          }
+        }, 20);
+      };
+      stress.appendChild(btn);
+      body.appendChild(stress);
+    }
 
     // effect size honesty
     if (a && a.effect !== undefined && Number.isFinite(a.effect)) {

@@ -36,6 +36,7 @@ node src/lmm.test.js       # linear mixed model vs the cluster-means equivalence
 node src/glmm.test.js      # GLMM (Laplace) vs lme4 `cbpp` anchor + exact log-OR/log-RR + OLRE SE
 node src/bayes.test.js     # Bayes factors: dual-integration + BayesFactor `sleep` anchor
 node src/knowledge.test.js # Codex/debrief/quiz/achievement data is complete & consistent
+node src/replicate.test.js # replication stress-test: a pipeline's win-rate across fresh samples
 node src/levels.verify.js  # every level: non-winning raw, solvable at par, decoys don't win; truth metadata present
 node src/ui.smoke.js       # drives the real ui.js through a DOM shim (Node/require path)
 node src/bundle.smoke.js   # runs the built index.html the browser way (global path); build first

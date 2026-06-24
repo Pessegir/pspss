@@ -1072,6 +1072,7 @@
       move: isMove,
       chart: result.chart || null,
       toolId: tool.id,
+      payload: payload || null, // kept so the pipeline can be replayed (stress-test)
     });
 
     // Fabrication can get you caught immediately.
@@ -1094,6 +1095,50 @@
     return { state, analysis: analyze(state), event: 'honest' };
   }
 
+  // --- replication stress-test ----------------------------------------------
+  // Replays a recorded pipeline (the player's exact intervention sequence) across
+  // `nReps` FRESH samples from the same data-generating process and reports how
+  // often that pipeline "wins". This is the only view in the game that shows a
+  // QRP's true cost: a false-positive *rate*, not a single rigged draw. For a
+  // manufactured-null level the honest pipeline sits near α; a QRP pipeline runs
+  // hotter. `actions` = [{toolId, payload}] (payload optional).
+  function simulateReplications(level, actions, opts) {
+    opts = opts || {};
+    const nReps = opts.nReps || 200;
+    const mode = opts.mode || 'tenure';
+    // Walk a fresh seed range well away from the level's pinned (rigged) seed so
+    // we sample the generator honestly. A prime stride decorrelates the streams.
+    const base = opts.baseSeed != null ? opts.baseSeed : ((level.seed || 1) + 500000);
+    const step = opts.step || 7919;
+    const pvals = [];
+    let sig = 0, wins = 0, errors = 0;
+    for (let i = 0; i < nReps; i++) {
+      const seed = (base + i * step) >>> 0;
+      try {
+        const st = newState(level, seed, mode);
+        for (const a of actions || []) {
+          st.finished = null; // replay the whole pipeline even past an early win
+          applyTool(st, a.toolId, a.payload);
+        }
+        st.finished = null;
+        const an = analyze(st);
+        if (an.metricKind === 'p' && Number.isFinite(an.metricValue)) pvals.push(an.metricValue);
+        if (an.significant) sig++;
+        if (an.win) wins++;
+      } catch (e) {
+        errors++;
+      }
+    }
+    const n = nReps - errors;
+    return {
+      n, nReps, errors,
+      sigRate: n ? sig / n : 0, // significant in either direction
+      winRate: n ? wins / n : 0, // significant AND in the predicted direction
+      pvals,
+      truth: level.truth || null,
+    };
+  }
+
   function stars(state) {
     const par = state.level.par;
     let s;
@@ -1104,7 +1149,7 @@
     return { stars: s, clean };
   }
 
-  const api = { newState, analyze, applyTool, reportNull, getArrays, obsArrays, stars, TOOLS, toolEnabled, finalize };
+  const api = { newState, analyze, applyTool, reportNull, getArrays, obsArrays, stars, TOOLS, toolEnabled, finalize, simulateReplications };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
