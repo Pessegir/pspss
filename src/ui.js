@@ -8,6 +8,7 @@
   const LEVELS = PSPSS_levels.LEVELS;
   const E = PSPSS_engine;
   const C = PSPSS_content;
+  const CHAR = (typeof PSPSS_character !== 'undefined') ? PSPSS_character : null;
 
   // --- tiny DOM helper ------------------------------------------------------
   function el(tag, props, children) {
@@ -286,11 +287,38 @@
     main.appendChild(dataPane); main.appendChild(outPane);
     root.appendChild(main);
 
+    if (CHAR) root.appendChild(advisorEl());
+
     renderData();
     renderStatStrip();
     // initial output
     $('#output').innerHTML = '';
     appendOutput(E.analyze(App.state), null, 'initial');
+  }
+
+  // ---- the meddling advisor: Prof. Hal, Emeritus ----
+  // A floating character who dispenses (usually terrible) advice on demand. He is
+  // a temptation, not a hint — his go-to "just log-transform it" only ever helps
+  // on the skew level and misleads everywhere else.
+  function advisorEl() {
+    const wrap = el('div', { class: 'advisor', title: CHAR.NAME + ' — ' + CHAR.ROLE });
+    const bubble = el('div', { class: 'advisor-bubble', role: 'status' });
+    const speech = el('div', { class: 'advisor-speech' });
+    const close = el('button', { class: 'advisor-x', title: 'Shoo', text: '✕' });
+    bubble.appendChild(el('div', { class: 'advisor-name', text: CHAR.NAME }));
+    bubble.appendChild(speech);
+    bubble.appendChild(close);
+    const img = el('img', { class: 'advisor-img', src: CHAR.IMG, alt: CHAR.NAME, title: 'Ask ' + CHAR.NAME + ' for advice (he is rarely right)' });
+    const say = () => { speech.textContent = '“' + CHAR.advice(App.mode) + '”'; bubble.classList.remove('hidden'); };
+    const hide = (e) => { if (e) e.stopPropagation(); bubble.classList.add('hidden'); };
+    img.addEventListener('click', say);
+    close.addEventListener('click', hide);
+    bubble.classList.add('hidden');
+    wrap.appendChild(bubble);
+    wrap.appendChild(img);
+    // He greets you once per level with an opening (bad) tip.
+    setTimeout(say, 400);
+    return wrap;
   }
 
   // ---- menu bar ----

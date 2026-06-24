@@ -73,6 +73,7 @@ global.PSPSS_engine = require('./engine');
 global.PSPSS_charts = require('./charts');
 global.PSPSS_knowledge = require('./knowledge');
 global.PSPSS_content = require('./content');
+global.PSPSS_character = require('./character');
 
 vm.runInThisContext(fs.readFileSync(path.join(__dirname, 'ui.js'), 'utf8'), { filename: 'ui.js' });
 
@@ -93,6 +94,9 @@ card('The One Bad Apple').fire('click');
 check('briefing shown', modalText().includes('Begin Analysis') && modalText().includes('The One Bad Apple'));
 clickBtn('Begin Analysis');
 check('p not yet significant', !pIsSig());
+check('advisor (Prof. Hal) rendered in-game', q('.advisor-img').length > 0);
+q('.advisor-img')[0].fire('click');
+check('clicking the advisor reveals an advice bubble', q('.advisor-speech')[0] && q('.advisor-speech')[0].textContent.length > 0 && !q('.advisor-bubble')[0]._cls.has('hidden'));
 clickItem('Refine Sample');
 check('outlier solved', pIsSig());
 check('win modal', modalText().includes('Significance Secured') || modalText().includes('ACCEPT'));

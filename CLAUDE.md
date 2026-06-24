@@ -86,6 +86,10 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   entries with citations + antidotes + `verdict`), `TOOL_LABEL`, `QUIZ_ITEMS`/`QUIZ_OPTIONS`,
   `ACHIEVEMENTS` + `evaluateAchievements`. Pure data/logic, consumed by `ui.js`.
 - **`content.js`** (`PSPSS_content`) — flavor text keyed by mode.
+- **`character.js`** (`PSPSS_character`) — "Prof. Hal, Emeritus", the floating advisor (embedded
+  base64 portrait + `advice(mode)`). His tips are **deliberately unreliable** (≈65% "just log-transform
+  it", which only ever helps the skew level) — a *temptation* mechanic, NOT a hint system, so it does
+  not relax the no-hints invariant. Rendered by `ui.js` `advisorEl()`; click him for a fresh bad idea.
 - **`ui.js`** — the SPSS-parody DOM + campaign picker, plus the post-level **Debrief** (truth reveal),
   **Methods Codex**, **Career Dashboard** (+achievements/career stats in localStorage), **Sandbox
   Lab**, **Spot-the-QRP quiz**, effect-size/CI output, and the **HOUSE RULE** banner. Browser only.

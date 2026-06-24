@@ -9,7 +9,7 @@ const SRC = path.join(__dirname, 'src');
 const ORDER = [
   'stats.js', 'lmm.js', 'glmm.js', 'bayes.js', 'rng.js',
   'levels.js', 'levels.c2.js', 'levels.c3.js', 'levels.c4.js', 'levels.c5.js', 'levels.c6.js', 'campaigns.js',
-  'engine.js', 'charts.js', 'knowledge.js', 'content.js', 'ui.js',
+  'engine.js', 'charts.js', 'knowledge.js', 'content.js', 'character.js', 'ui.js',
 ];
 
 const js = ORDER.map((f) => {

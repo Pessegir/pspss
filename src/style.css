@@ -275,4 +275,37 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   .dash-grid { grid-template-columns: 1fr 1fr; }
   .quiz-opts, .ach-list { grid-template-columns: 1fr; }
   button.btn { padding: 9px 14px; }
+  .advisor { right: 6px; bottom: 6px; }
+  .advisor-img { height: 92px; }
+  .advisor-bubble { max-width: 200px; }
+}
+
+/* ---- Prof. Hal, Emeritus: the meddling (unreliable) advisor ---- */
+.advisor {
+  position: fixed; right: 14px; bottom: 12px; z-index: 40;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  pointer-events: none; /* only the kids catch clicks, so he never blocks the UI */
+}
+.advisor-img {
+  height: 150px; width: auto; cursor: pointer; pointer-events: auto;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.4));
+  image-rendering: pixelated; transition: transform .12s ease;
+}
+.advisor-img:hover { transform: translateY(-3px) scale(1.03); }
+.advisor-bubble {
+  position: relative; pointer-events: auto; max-width: 240px;
+  background: #fffbe9; color: #1f2937; border: 2px solid #b45309;
+  border-radius: 10px; padding: 9px 26px 9px 11px; font-size: 13px; line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0,0,0,.35);
+}
+.advisor-bubble.hidden { display: none; }
+.advisor-bubble::after { /* little tail pointing down toward Hal */
+  content: ''; position: absolute; right: 26px; bottom: -9px;
+  border-width: 9px 8px 0; border-style: solid; border-color: #b45309 transparent transparent;
+}
+.advisor-name { font-weight: 700; color: #b45309; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.advisor-speech { font-style: italic; }
+.advisor-x {
+  position: absolute; top: 3px; right: 4px; border: none; background: none;
+  cursor: pointer; color: #9a3412; font-size: 13px; line-height: 1; padding: 2px;
 }
