@@ -90,6 +90,10 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   Lab**, **Spot-the-QRP quiz**, effect-size/CI output, and the **HOUSE RULE** banner. Browser only.
   Campaigns gate in order; a **Reviewer 2 backdoor** (start-screen link, password in `UNLOCK_WORDS`)
   sets `App.unlocked` (localStorage `pspss_unlock`) to bypass gating without faking progress/stars.
+  **Gauntlet mode** (`App.gauntlet`, briefing button): replays a level on a *fresh random seed*
+  instead of the pinned tuned one — the QRP is not guaranteed to crack it (the "fish doesn't always
+  bite" replay/hard mode). Practice only: `recordResult` is skipped so it never touches the career.
+  This does NOT relax the no-hints invariant — it adds variance, not assistance.
 
 ### Key invariants
 

@@ -243,12 +243,22 @@
   // ========================================================================
   // GAME SCREEN
   // ========================================================================
-  function startLevel(idx) {
+  function startLevel(idx, opts) {
+    opts = opts || {};
     App.levelIndex = idx;
-    App.state = E.newState(LEVELS[idx], undefined, App.mode);
+    App.gauntlet = !!opts.gauntlet;
+    App.gauntletSeed = opts.gauntlet ? opts.seed : null;
+    // Normal play uses the level's pinned (tuned) seed; Gauntlet draws a FRESH
+    // random sample, so the rigged solution is not guaranteed to crack it.
+    App.state = E.newState(LEVELS[idx], opts.gauntlet ? opts.seed : undefined, App.mode);
     App.state._committed = false;
     renderGame();
     showBriefing();
+  }
+
+  // A fresh random draw from the same generator, well away from the tuned seed.
+  function startGauntlet(idx) {
+    startLevel(idx, { gauntlet: true, seed: (Math.floor(Math.random() * 1e9) ^ 0x5bd1e995) >>> 0 });
   }
 
   function renderGame() {
@@ -260,6 +270,7 @@
     const lv = App.state.level;
     const sub = el('div', { class: 'subbar' });
     sub.appendChild(el('div', { class: 'level-info', html: `<b>${lv.title}</b> &nbsp; <span class="rank">${lv.rank}</span>` }));
+    if (App.gauntlet) sub.appendChild(el('span', { class: 'mode-pill', style: 'background:#7c2d12;color:#fde68a', title: 'A fresh random sample — the textbook trick may not work this time. Not recorded to your career.', text: '🎲 GAUNTLET' }));
     sub.appendChild(modePill());
     root.appendChild(sub);
 
@@ -641,8 +652,12 @@
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); commitPrereg(sel.value); } }, ['Commit & Run (final)']));
       body.appendChild(row);
     } else {
+      if (App.gauntlet) {
+        body.appendChild(el('div', { class: 'out-flag gauntlet-note', style: 'margin:8px 0;background:#7c2d12;color:#fde68a', html: '🎲 <b>GAUNTLET RUN.</b> This is a fresh random sample from the same study design — <b>not</b> the rigged one. The textbook QRP may or may not produce significance this time; that uncertainty is the whole point. Practice only: not recorded to your career.' }));
+      }
       const row = el('div', { class: 'btnrow' });
       row.appendChild(el('button', { class: 'btn', onclick: closeModal }, ['Begin Analysis']));
+      if (!App.gauntlet) row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); startGauntlet(App.levelIndex); } }, ['🎲 Gauntlet (random sample)']));
       row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Back to Campaign']));
       body.appendChild(row);
     }
@@ -788,6 +803,9 @@
     if (event === 'retract' || event === 'prereg-null') {
       row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startLevel(App.levelIndex); } }, ['Try Again']));
     }
+    if (App.gauntlet) {
+      row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); startGauntlet(App.levelIndex); } }, ['🎲 New random sample']));
+    }
     row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Campaign Map']));
     return row;
   }
@@ -869,6 +887,7 @@
   }
 
   function recordResult(r) {
+    if (App.gauntlet) return; // practice runs on random samples don't touch the career
     const id = App.state.level.id;
     const prev = App.progress[id];
     // keep best stars
