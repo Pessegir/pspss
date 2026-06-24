@@ -832,6 +832,46 @@
     }
     body.appendChild(reveal);
 
+    // Replication stress-test: replay THIS pipeline across fresh samples and show
+    // how often it "wins". The honest payoff of the whole game — a false-positive
+    // *rate*, not the single rigged draw you just saw.
+    if (E.simulateReplications && event !== 'retract') {
+      const actions = App.state.log
+        .filter((e) => e.move && e.toolId && e.toolId !== 'fabricate')
+        .map((e) => ({ toolId: e.toolId, payload: e.payload }));
+      const stress = el('div', { class: 'dbf' });
+      const btn = el('button', { class: 'btn ghost' }, [
+        actions.length ? '🔁 Stress-test this pipeline (200 fresh samples)' : '🔁 How often does the honest analysis "work"? (200 samples)',
+      ]);
+      btn.onclick = () => {
+        btn.disabled = true; btn.textContent = 'Re-running 200 studies…';
+        setTimeout(() => {
+          let r;
+          try { r = E.simulateReplications(lv, actions, { nReps: 200, mode: App.mode }); }
+          catch (err) { stress.innerHTML = '<b>Stress-test unavailable for this level.</b>'; return; }
+          const rate = (100 * r.winRate).toFixed(0);
+          const manufactured = lv.truth && lv.truth.exists === false;
+          const verdict = actions.length
+            ? `Your pipeline declared victory in <b>${rate}%</b> of ${r.n} fresh datasets` +
+              (manufactured
+                ? ` — where the true effect is <b>zero</b>. That is your false-positive rate. A clean analysis would sit near 5%.`
+                : `. The effect is real, so this is the pipeline's power — but a reviewer can't tell power from luck on any single study.`)
+            : `The honest analysis crossed p&lt;.05 in <b>${rate}%</b> of ${r.n} fresh datasets` +
+              (manufactured ? ` — exactly the ~5% false positives α permits.` : `, i.e. its true power.`);
+          stress.innerHTML = '';
+          stress.appendChild(el('div', { html: verdict }));
+          if (r.pvals && r.pvals.length && typeof PSPSS_charts !== 'undefined') {
+            const sig = r.pvals.filter((p) => p < 0.05);
+            const fig = el('div');
+            try { fig.appendChild(PSPSS_charts.pcurve(sig, { title: 'p-curve of YOUR pipeline (significant runs)' })); } catch (e) {}
+            stress.appendChild(fig);
+          }
+        }, 20);
+      };
+      stress.appendChild(btn);
+      body.appendChild(stress);
+    }
+
     // effect size honesty
     if (a && a.effect !== undefined && Number.isFinite(a.effect)) {
       const ciTxt = a.ci ? ` (95% CI of the difference [${fmt(a.ci.lo, 2)}, ${fmt(a.ci.hi, 2)}]${a.ci.lo < 0 && a.ci.hi > 0 ? ', which spans zero' : ''})` : '';
