@@ -1404,7 +1404,7 @@
     if (!introSupported() || $('#intro-back')) return;
     const back = el('div', { class: 'intro-back', id: 'intro-back', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'PSPSS intro video' });
     const v = el('video', { class: 'intro-video', src: 'intro.mp4', playsinline: '' });
-    v.muted = true; v.autoplay = true;
+    v.muted = false; // sound by default; autoplay policy may force the muted fallback below
     let closed = false;
     const done = () => {
       if (closed) return;
@@ -1418,14 +1418,26 @@
     const onKey = (e) => { if (e.key === 'Escape') done(); };
     v.addEventListener('ended', done);
     v.addEventListener('error', done); // no intro.mp4 next to the page -> skip silently
-    const unmute = el('button', { class: 'btn ghost', onclick: () => { v.muted = !v.muted; unmute.textContent = v.muted ? '🔇 Unmute' : '🔊 Mute'; } }, ['🔇 Unmute']);
+    const sound = el('button', { class: 'btn ghost' }, ['🔊 Mute']);
+    const syncSound = () => { sound.textContent = v.muted ? '🔇 Unmute' : '🔊 Mute'; };
+    sound.addEventListener('click', () => { v.muted = !v.muted; syncSound(); });
     const skip = el('button', { class: 'btn', onclick: done }, ['Skip intro ▸']);
     back.appendChild(v);
-    back.appendChild(el('div', { class: 'btnrow intro-controls' }, [unmute, skip]));
+    back.appendChild(el('div', { class: 'btnrow intro-controls' }, [sound, skip]));
     document.addEventListener('keydown', onKey);
     document.body.appendChild(back);
     try { skip.focus(); } catch (e) {}
-    try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    // Play with sound when the browser lets us (always true for the 🎬 replay,
+    // since a click is a user gesture). Autoplay policy rejects unmuted play on
+    // a cold first visit — fall back to muted rather than a frozen first frame.
+    try {
+      const p = v.play();
+      if (p && p.catch) p.catch(() => {
+        v.muted = true;
+        syncSound();
+        try { const p2 = v.play(); if (p2 && p2.catch) p2.catch(() => {}); } catch (e) {}
+      });
+    } catch (e) {}
   }
 
   // ---- boot ----
