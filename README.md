@@ -1,5 +1,7 @@
 # PSPSS — *Probably Significant Statistical Software*
 
+[![CI](https://github.com/Pessegir/pspss/actions/workflows/ci.yml/badge.svg)](https://github.com/Pessegir/pspss/actions/workflows/ci.yml)
+
 ▶️ **[Play it in your browser](https://pessegir.github.io/pspss/)** — no install, one self-contained page.
 
 A satirical puzzle game about p-hacking and the replication crisis. Each "study" is rigged so the
