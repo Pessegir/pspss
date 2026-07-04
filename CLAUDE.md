@@ -57,7 +57,9 @@ node src/tune-seeds.c6.js  # C6 (causal) seed search (OLS/2SLS — fast, full ra
 ```
 
 Bare `node` only — no npm/package.json. No browser/jsdom in CI, so UI changes are validated via
-the two headless smoke harnesses. (A real Firefox + `:1` display exists for manual screenshots:
+the two headless smoke harnesses. GitHub Actions (`.github/workflows/ci.yml`) runs `./test.sh` on
+every push/PR plus a **bundle-drift check** (rebuild, then `git diff --exit-code index.html` —
+fails if someone edited `src/` without committing the rebuilt bundle). (A real Firefox + `:1` display exists for manual screenshots:
 `firefox --screenshot out.png --window-size=1200,1000 file://$PWD/index.html`.)
 
 ## Architecture
