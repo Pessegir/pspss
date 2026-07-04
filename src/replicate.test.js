@@ -56,5 +56,24 @@ const pct = (x) => (100 * x).toFixed(1) + '%';
   assert('exposes the level ground-truth', a.truth && typeof a.truth.exists === 'boolean');
 }
 
+// --- 4. Fabrication retraction is seeded, not Math.random() ------------------
+// The retraction roll must come from the state's seeded event stream so a
+// pipeline containing `fabricate` replays identically (same seed ⇒ same fate),
+// and different seeds actually vary the outcome.
+{
+  const lv = byId('outlier');
+  const run = (seed) => {
+    const st = E.newState(lv, seed, 'tenure');
+    E.applyTool(st, 'fabricate');
+    return st.finished === 'retract';
+  };
+  const seeds = Array.from({ length: 40 }, (_, i) => 777 + i * 13);
+  const first = seeds.map(run);
+  const second = seeds.map(run);
+  assert('fabricate outcome reproduces per seed', first.every((v, i) => v === second[i]));
+  assert('fabricate outcome varies across seeds', first.some(Boolean) && !first.every(Boolean),
+    `${first.filter(Boolean).length}/${seeds.length} retracted`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed.`);
 process.exit(failed ? 1 : 0);
