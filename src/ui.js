@@ -135,6 +135,7 @@
       el('button', { class: 'btn ghost', onclick: showMetaLab }, ['🔬 Meta-Science Lab']),
       el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
       el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
+      el('button', { class: 'btn ghost', onclick: showIntro, title: 'Replay the intro video' }, ['🎬 Intro']),
     ]);
     wrap.appendChild(tools);
 
@@ -1288,6 +1289,47 @@
     setTimeout(() => t.remove(), 2600);
   }
 
+  // ---- intro video ----
+  // Plays intro.mp4 (a sibling asset — 2.6 MB is too big to inline in the
+  // single-file bundle) over the start screen on first visit. Muted autoplay
+  // (browsers block autoplay with sound), skippable, and it degrades to
+  // nothing when the file is missing (e.g. a saved-page copy of index.html)
+  // or in the headless harnesses (no HTMLVideoElement in the DOM shims).
+  function introSupported() {
+    return typeof HTMLVideoElement !== 'undefined' && typeof document.body !== 'undefined';
+  }
+  function maybeIntro() {
+    if (!introSupported()) return;
+    try { if (localStorage.getItem('pspss_intro_seen') === '1') return; } catch (e) {}
+    showIntro();
+  }
+  function showIntro() {
+    if (!introSupported() || $('#intro-back')) return;
+    const back = el('div', { class: 'intro-back', id: 'intro-back', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'PSPSS intro video' });
+    const v = el('video', { class: 'intro-video', src: 'intro.mp4', playsinline: '' });
+    v.muted = true; v.autoplay = true;
+    let closed = false;
+    const done = () => {
+      if (closed) return;
+      closed = true;
+      try { localStorage.setItem('pspss_intro_seen', '1'); } catch (e) {}
+      document.removeEventListener('keydown', onKey);
+      try { v.pause(); } catch (e) {}
+      back.remove();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(); };
+    v.addEventListener('ended', done);
+    v.addEventListener('error', done); // no intro.mp4 next to the page -> skip silently
+    const unmute = el('button', { class: 'btn ghost', onclick: () => { v.muted = !v.muted; unmute.textContent = v.muted ? '🔇 Unmute' : '🔊 Mute'; } }, ['🔇 Unmute']);
+    const skip = el('button', { class: 'btn', onclick: done }, ['Skip intro ▸']);
+    back.appendChild(v);
+    back.appendChild(el('div', { class: 'btnrow intro-controls' }, [unmute, skip]));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(back);
+    try { skip.focus(); } catch (e) {}
+    try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  }
+
   // ---- boot ----
-  document.addEventListener('DOMContentLoaded', renderStart);
+  document.addEventListener('DOMContentLoaded', () => { renderStart(); maybeIntro(); });
 })();
