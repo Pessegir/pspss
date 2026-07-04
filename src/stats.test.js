@@ -102,6 +102,13 @@ const g0 = y.filter((_, i) => grp[i] === 0), g1 = y.filter((_, i) => grp[i] === 
 assert('raw effect not significant (covariate masks it)', S.tTestIndependent(g0, g1, true).p > 0.05);
 const olsRes = S.ols([7, 10, 13, 16, 19], [[0, 1, 2, 3, 4]]);
 approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.beta[1], 3, 1e-6);
+// A collinear design must fail loudly, not return NaN/Inf coefficients.
+{
+  let threw = false;
+  try { S.ols([1, 2, 3, 4, 5], [[0, 1, 2, 3, 4], [0, 2, 4, 6, 8]]); }
+  catch (e) { threw = /singular/.test(e.message); }
+  assert('ols throws "singular" on collinear predictors', threw);
+}
 
 // 2SLS, just-identified: the IV estimate equals the Wald ratio cov(z,y)/cov(z,x).
 {

@@ -439,6 +439,12 @@
 
   function matInverse(A) {
     const n = A.length;
+    // Scale-relative singularity threshold: a pivot this small means the
+    // design is (numerically) collinear — fail loudly rather than emit NaN/Inf
+    // coefficients that would masquerade as a real fit downstream.
+    let scale = 0;
+    for (const row of A) for (const v of row) scale = Math.max(scale, Math.abs(v));
+    const tiny = 1e-12 * Math.max(1, scale);
     const M = A.map((row, i) =>
       row.concat(Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)))
     );
@@ -450,6 +456,9 @@
       }
       [M[col], M[pivot]] = [M[pivot], M[col]];
       const pv = M[col][col];
+      if (!(Math.abs(pv) > tiny)) {
+        throw new Error('singular design matrix — model could not be estimated');
+      }
       for (let j = 0; j < 2 * n; j++) M[col][j] /= pv;
       for (let r = 0; r < n; r++) {
         if (r === col) continue;
