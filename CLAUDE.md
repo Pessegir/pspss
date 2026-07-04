@@ -31,6 +31,7 @@ funnel / power / equivalence).
 node build.js              # bundle src/* -> index.html
 ./test.sh                  # rebuild + run the full suite
 
+node src/rng.test.js       # seeded PRNG: sequence pins (level determinism), Box-Muller, moments
 node src/stats.test.js     # stats engine vs hand-derived / known references
 node src/lmm.test.js       # linear mixed model vs the cluster-means equivalence
 node src/glmm.test.js      # GLMM (Laplace) vs lme4 `cbpp` anchor + exact log-OR/log-RR + OLRE SE
