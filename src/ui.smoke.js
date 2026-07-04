@@ -220,6 +220,30 @@ clickItem('Exit to Campaign');
 console.log('\nMode toggle:');
 q('.mode-pill')[0].fire('click');
 check('mode pill toggled without error', true);
+check('mode choice is persisted', store['pspss_mode'] === 'pure' || store['pspss_mode'] === 'tenure');
+check('exit-to-campaign cleared the game state (pill re-renders the map, not the level)',
+  appNode.textContent.includes('Career Dashboard'));
+
+console.log('\nSave export / import / wipe:');
+clickBtn('Career Dashboard');
+clickBtn('Export save');
+const exported = q('textarea')[0].value;
+check('export emits parseable JSON with progress', (() => { try { return typeof JSON.parse(exported).progress === 'object'; } catch (e) { return false; } })());
+clickBtn('Back');
+clickBtn('Wipe career'); // arm the confirm
+clickBtn('Wipe career'); // confirm
+check('wipe clears progress', store['pspss_progress'] === '{}');
+check('wipe resets career stats too', JSON.parse(store['pspss_career'] || '{}').publications === 0);
+check('wipe clears achievements', store['pspss_ach'] === '[]');
+clickBtn('Import save');
+q('textarea')[0].value = 'not json at all';
+clickBtn('Import');
+check('garbage import is rejected (progress stays empty)', store['pspss_progress'] === '{}');
+// rejection keeps the Import modal open for a retry — paste the real save
+q('textarea')[0].value = exported;
+clickBtn('Import');
+check('import round-trips the save', JSON.parse(store['pspss_career'] || '{}').publications >= 1 && JSON.parse(store['pspss_ach'] || '[]').length >= 1);
+clickBtn('Close');
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);
