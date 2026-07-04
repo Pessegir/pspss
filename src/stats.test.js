@@ -22,6 +22,16 @@ approx('normalTwoTailedP(1.96)', S.normalTwoTailedP(1.96), 0.05, 4e-3);
 approx('tDistTwoTailedP(1.96, 1e7)', S.tDistTwoTailedP(1.96, 1e7), 0.05, 4e-3);
 approx('tDistTwoTailedP(5, 8)', S.tDistTwoTailedP(5, 8), 0.001053, 1e-4);
 approx('tDistTwoTailedP(2.262, 9)', S.tDistTwoTailedP(2.262, 9), 0.05, 2e-3);
+// Deep-tail z: the old erf path underflowed to a literal 0 past |z|≈6.
+// References: 2(1−Φ(6)) = 1.97318e-9, 2(1−Φ(8)) = 1.24419e-15 (R: 2*pnorm(-z)).
+{
+  const relOk = (got, want, tol) => Math.abs(got / want - 1) <= tol;
+  assert('normalTwoTailedP(6) ~ 1.9732e-9 (rel 1e-2)', relOk(S.normalTwoTailedP(6), 1.97318e-9, 1e-2));
+  assert('normalTwoTailedP(8) ~ 1.2442e-15 (rel 1e-2)', relOk(S.normalTwoTailedP(8), 1.24419e-15, 1e-2));
+  assert('normalTwoTailedP(40) > 0 (never literal 0)', S.normalTwoTailedP(40) > 0);
+  assert('tail is monotone across the z=5 switchover',
+    S.normalTwoTailedP(4.9) > S.normalTwoTailedP(5.1) && S.normalTwoTailedP(5.1) > S.normalTwoTailedP(6));
+}
 
 console.log('\nDescriptives:');
 approx('mean', S.mean([1, 2, 3, 4, 5]), 3);
@@ -54,6 +64,10 @@ const mw = S.mannWhitneyU([1, 2, 3, 4], [5, 6, 7, 8]);
 approx('U', mw.U, 0); assert('p < 0.05 for full separation', mw.p < 0.05);
 const mw2 = S.mannWhitneyU([1, 2, 3, 4], [1, 2, 3, 4]);
 assert('p ~ 1 (>0.8) for identical groups', mw2.p > 0.8);
+// Degenerate case: every value tied to a constant collapses the variance to 0;
+// must return p = 1, not NaN (mirrors the wilcoxonSignedRank guard).
+const mwConst = S.mannWhitneyU([5, 5, 5, 5], [5, 5, 5, 5]);
+assert('all-constant groups give p = 1, z = 0 (no NaN)', mwConst.p === 1 && mwConst.z === 0);
 
 console.log('\nWilcoxon signed-rank:');
 const wsr = S.wilcoxonSignedRank([10, 12, 14, 16, 18], [1, 2, 3, 4, 5]);
@@ -88,6 +102,13 @@ const g0 = y.filter((_, i) => grp[i] === 0), g1 = y.filter((_, i) => grp[i] === 
 assert('raw effect not significant (covariate masks it)', S.tTestIndependent(g0, g1, true).p > 0.05);
 const olsRes = S.ols([7, 10, 13, 16, 19], [[0, 1, 2, 3, 4]]);
 approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.beta[1], 3, 1e-6);
+// A collinear design must fail loudly, not return NaN/Inf coefficients.
+{
+  let threw = false;
+  try { S.ols([1, 2, 3, 4, 5], [[0, 1, 2, 3, 4], [0, 2, 4, 6, 8]]); }
+  catch (e) { threw = /singular/.test(e.message); }
+  assert('ols throws "singular" on collinear predictors', threw);
+}
 
 // 2SLS, just-identified: the IV estimate equals the Wald ratio cov(z,y)/cov(z,x).
 {

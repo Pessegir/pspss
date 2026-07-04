@@ -108,9 +108,18 @@
     return betai(0.5 * df, 0.5, x);
   }
 
-  // Two-tailed p-value for a standard-normal z statistic.
+  // Two-tailed p-value for a standard-normal z statistic. The erf
+  // approximation's absolute error (~1e-7) swamps the true tail beyond |z|≈5,
+  // eventually returning a literal 0; switch to the asymptotic Mills-ratio
+  // expansion there so extreme z's report a real (tiny) p, never 0.
   function normalTwoTailedP(z) {
-    return 2 * (1 - normalCDF(Math.abs(z)));
+    const az = Math.abs(z);
+    if (az < 5) return 2 * (1 - normalCDF(az));
+    const inv2 = 1 / (az * az);
+    const tail =
+      (Math.exp(-0.5 * az * az) / (az * Math.sqrt(2 * Math.PI))) *
+      (1 - inv2 + 3 * inv2 * inv2);
+    return Math.max(2 * tail, Number.MIN_VALUE);
   }
 
   // ---- Descriptives --------------------------------------------------------
@@ -235,11 +244,12 @@
     Object.values(counts).forEach((c) => {
       tieSum += c * c * c - c;
     });
-    const sigmaU = Math.sqrt(
-      ((na * nb) / 12) * (N + 1 - tieSum / (N * (N - 1)))
-    );
-    const z = (U - muU + 0.5) / sigmaU; // continuity correction toward the mean
-    return { U, z, p: normalTwoTailedP(z) };
+    // The tie correction can drive the variance to 0 (all values identical);
+    // guard like wilcoxonSignedRank below so p is 1 instead of NaN.
+    const varU = ((na * nb) / 12) * (N + 1 - tieSum / (N * (N - 1)));
+    const sigmaU = Math.sqrt(Math.max(0, varU));
+    const z = sigmaU > 0 ? (U - muU + 0.5) / sigmaU : 0; // continuity correction toward the mean
+    return { U, z, p: sigmaU > 0 ? normalTwoTailedP(z) : 1 };
   }
 
   // Wilcoxon signed-rank (paired, nonparametric). Normal approximation. Two-tailed.
@@ -429,6 +439,12 @@
 
   function matInverse(A) {
     const n = A.length;
+    // Scale-relative singularity threshold: a pivot this small means the
+    // design is (numerically) collinear — fail loudly rather than emit NaN/Inf
+    // coefficients that would masquerade as a real fit downstream.
+    let scale = 0;
+    for (const row of A) for (const v of row) scale = Math.max(scale, Math.abs(v));
+    const tiny = 1e-12 * Math.max(1, scale);
     const M = A.map((row, i) =>
       row.concat(Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)))
     );
@@ -440,6 +456,9 @@
       }
       [M[col], M[pivot]] = [M[pivot], M[col]];
       const pv = M[col][col];
+      if (!(Math.abs(pv) > tiny)) {
+        throw new Error('singular design matrix — model could not be estimated');
+      }
       for (let j = 0; j < 2 * n; j++) M[col][j] /= pv;
       for (let r = 0; r < n; r++) {
         if (r === col) continue;

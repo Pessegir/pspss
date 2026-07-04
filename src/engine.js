@@ -10,6 +10,7 @@
   const LMM = typeof require !== 'undefined' ? require('./lmm') : root.PSPSS_lmm;
   const GLMM = typeof require !== 'undefined' ? require('./glmm') : root.PSPSS_glmm;
   const Bayes = typeof require !== 'undefined' ? require('./bayes') : root.PSPSS_bayes;
+  const RNGmod = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
 
   // Context handed to a level's custom evaluate(state, ctx) — keeps each puzzle's
   // statistical logic self-contained while reusing the real engines.
@@ -25,6 +26,10 @@
     const isClustered = level.design === 'clustered';
     return {
       level,
+      seed: effectiveSeed,
+      // Event rolls (fabrication retraction) draw from their own seeded stream —
+      // decorrelated from the data stream — so a pipeline replays identically.
+      eventRng: RNGmod.RNG((effectiveSeed ^ 0x9e3779b9) >>> 0),
       mode: mode || 'tenure', // 'tenure' (default) | 'pure'
       design: level.design,
       paradigm: level.paradigm || 'frequentist',
@@ -1078,7 +1083,7 @@
     // Fabrication can get you caught immediately.
     if (toolId === 'fabricate') {
       const risk = Math.min(0.92, state.suspicion / 100);
-      if (Math.random() < risk) {
+      if (state.eventRng.next() < risk) {
         state.finished = 'retract';
         return { state, analysis: analyze(state), event: 'retract' };
       }

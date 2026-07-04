@@ -11,10 +11,10 @@ function approx(name, got, want, tol) { tol = tol == null ? 1e-2 : tol; const ok
 function assert(name, cond, extra) { cond ? pass++ : fail++; console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? '  — ' + extra : ''}`); }
 function num(x) { return Number.isFinite(x) ? x.toPrecision(5) : String(x); }
 
+const { RNG } = require('./rng');
 function rngFactory(seed) {
-  let s = seed >>> 0, spare = null;
-  const u = () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  return (mu, sd) => { if (spare !== null) { const v = spare; spare = null; return mu + sd * v; } let u1 = 0; while (u1 === 0) u1 = u(); const u2 = u(); const mag = Math.sqrt(-2 * Math.log(u1)); spare = mag * Math.sin(2 * Math.PI * u2); return mu + sd * (mag * Math.cos(2 * Math.PI * u2)); };
+  const r = RNG(seed);
+  return (mu, sd) => r.normal(mu, sd);
 }
 function buildBalanced(seed, nGroups, perGroup, treatEffect, tau, sigma) {
   const y = [], treat = [], groups = [], norm = rngFactory(seed);

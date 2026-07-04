@@ -50,8 +50,8 @@
 
   // --- app state ------------------------------------------------------------
   const App = {
-    mode: 'tenure',
-    prereg: false,
+    mode: loadMode(),
+    prereg: loadPrereg(),
     levelIndex: 0,
     state: null,
     progress: load(),
@@ -66,6 +66,10 @@
     catch (e) { return {}; }
   }
   function loadUnlock() { try { return localStorage.getItem('pspss_unlock') === '1'; } catch (e) { return false; } }
+  function loadMode() { try { return localStorage.getItem('pspss_mode') === 'pure' ? 'pure' : 'tenure'; } catch (e) { return 'tenure'; } }
+  function saveMode() { try { localStorage.setItem('pspss_mode', App.mode); } catch (e) {} }
+  function loadPrereg() { try { return localStorage.getItem('pspss_prereg') === '1'; } catch (e) { return false; } }
+  function savePrereg() { try { localStorage.setItem('pspss_prereg', App.prereg ? '1' : '0'); } catch (e) {} }
   function saveUnlock() { try { localStorage.setItem('pspss_unlock', App.unlocked ? '1' : '0'); } catch (e) {} }
   function loadSound() { try { return localStorage.getItem('pspss_sound') === '1'; } catch (e) { return false; } }
   // optional WebAudio sfx (off by default; no-op in headless/Node)
@@ -90,9 +94,9 @@
   }
   function washTone() { return 380 + Math.random() * 120; }
   function loadAch() { try { return JSON.parse(localStorage.getItem('pspss_ach') || '[]'); } catch (e) { return []; } }
+  function careerDefaults() { return { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 }; }
   function loadCareer() {
-    const d = { publications: 0, retractions: 0, honestNulls: 0, cleanWins: 0, p001Wins: 0 };
-    try { return Object.assign(d, JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return d; }
+    try { return Object.assign(careerDefaults(), JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return careerDefaults(); }
   }
   function save() { try { localStorage.setItem('pspss_progress', JSON.stringify(App.progress)); } catch (e) {} }
   function saveAch() { try { localStorage.setItem('pspss_ach', JSON.stringify(App.achievements)); localStorage.setItem('pspss_career', JSON.stringify(App.career)); } catch (e) {} }
@@ -116,7 +120,7 @@
     const pre = el('label', { class: 'hint', style: 'display:flex;align-items:center;gap:6px;cursor:pointer' }, []);
     const cb = el('input', { type: 'checkbox' });
     cb.checked = App.prereg;
-    cb.addEventListener('change', () => { App.prereg = cb.checked; });
+    cb.addEventListener('change', () => { App.prereg = cb.checked; savePrereg(); });
     pre.appendChild(cb);
     pre.appendChild(document.createTextNode('Preregistration mode (declare ONE analysis up front — honest, brutal)'));
     controls.appendChild(pre);
@@ -135,6 +139,7 @@
       el('button', { class: 'btn ghost', onclick: showMetaLab }, ['🔬 Meta-Science Lab']),
       el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
       el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
+      el('button', { class: 'btn ghost', onclick: showIntro, title: 'Replay the intro video' }, ['🎬 Intro']),
     ]);
     wrap.appendChild(tools);
 
@@ -229,6 +234,7 @@
     pill.appendChild(t); pill.appendChild(p);
     pill.addEventListener('click', () => {
       App.mode = App.mode === 'tenure' ? 'pure' : 'tenure';
+      saveMode();
       if (App.state) { App.state.mode = App.mode; renderGame(); } else renderStart();
     });
     return pill;
@@ -371,7 +377,7 @@
         { label: 'Report Null Result…', tip: 'The honest exit. Career-limiting.', run: confirmReportNull },
         { sep: true },
         { label: 'Save (to a USB you will lose)', run: () => toast('Saved. You will never find this file again.') },
-        { label: 'Exit to Campaign', run: renderStart },
+        { label: 'Exit to Campaign', run: () => { App.state = null; renderStart(); } },
       ];
     }
     if (menuName === 'Help') {
@@ -1060,10 +1066,67 @@
 
     const row = el('div', { class: 'btnrow' });
     if (cleared > 0) row.appendChild(el('button', { class: 'btn', onclick: replicationEpilogue }, ['Run Replication Crisis']));
-    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.progress = {}; App.achievements = []; App.career = loadCareer(); save(); saveAch(); showDashboard(); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.confirmWipe = false; App.progress = {}; App.achievements = []; App.career = careerDefaults(); save(); saveAch(); showDashboard(); toast('Career wiped. A fresh CV.'); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: showExport }, ['⇩ Export save']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: showImport }, ['⇧ Import save']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']));
     body.appendChild(row);
     modal('Career Dashboard', body, { dismissable: true });
+  }
+
+  // ---- save export / import ----
+  // The save is small JSON, so the portable path is copy/paste (works on
+  // file:// and in the DOM shims); the Download button is a browser extra.
+  function exportBlob() {
+    return JSON.stringify({ v: 1, progress: App.progress, achievements: App.achievements, career: App.career });
+  }
+  function showExport() {
+    const body = el('div');
+    body.appendChild(el('h2', { text: '⇩ Export save' }));
+    body.appendChild(el('div', { class: 'hint', text: 'Copy this anywhere safe (or download it). Import it on another machine to carry your career over.' }));
+    const ta = el('textarea', { style: 'width:100%;height:120px;font-family:Consolas,monospace;font-size:11px;margin:8px 0', readonly: '' });
+    ta.value = exportBlob();
+    body.appendChild(ta);
+    const row = el('div', { class: 'btnrow' });
+    row.appendChild(el('button', { class: 'btn', onclick: () => { try { ta.select(); document.execCommand && document.execCommand('copy'); } catch (e) {} toast('Copied. Guard it like unpublished data.'); } }, ['Copy']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => {
+      try {
+        const a = el('a', { href: URL.createObjectURL(new Blob([ta.value], { type: 'application/json' })), download: 'pspss-save.json' });
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { toast('Download not available here — use Copy.'); }
+    } }, ['Download .json']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: showDashboard }, ['Back']));
+    body.appendChild(row);
+    modal('Export save', body, { dismissable: true });
+  }
+  function validSave(o) {
+    if (!o || typeof o !== 'object') return false;
+    if (o.progress && typeof o.progress !== 'object') return false;
+    if (o.achievements && !Array.isArray(o.achievements)) return false;
+    if (o.career && typeof o.career !== 'object') return false;
+    return !!(o.progress || o.achievements || o.career);
+  }
+  function showImport() {
+    const body = el('div');
+    body.appendChild(el('h2', { text: '⇧ Import save' }));
+    body.appendChild(el('div', { class: 'hint', text: 'Paste an exported save below. It replaces the career on this machine.' }));
+    const ta = el('textarea', { style: 'width:100%;height:120px;font-family:Consolas,monospace;font-size:11px;margin:8px 0' });
+    body.appendChild(ta);
+    const row = el('div', { class: 'btnrow' });
+    row.appendChild(el('button', { class: 'btn', onclick: () => {
+      let o = null;
+      try { o = JSON.parse(ta.value); } catch (e) {}
+      if (!validSave(o)) { toast('That is not a PSPSS save. Reviewer 2 rejects it.'); return; }
+      App.progress = o.progress || {};
+      App.achievements = Array.isArray(o.achievements) ? o.achievements : [];
+      App.career = Object.assign(careerDefaults(), o.career || {});
+      save(); saveAch();
+      showDashboard();
+      toast('Save imported. Welcome back, Professor.');
+    } }, ['Import']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: showDashboard }, ['Back']));
+    body.appendChild(row);
+    modal('Import save', body, { dismissable: true });
   }
 
   // ======================= SANDBOX LAB =======================
@@ -1288,6 +1351,47 @@
     setTimeout(() => t.remove(), 2600);
   }
 
+  // ---- intro video ----
+  // Plays intro.mp4 (a sibling asset — 2.6 MB is too big to inline in the
+  // single-file bundle) over the start screen on first visit. Muted autoplay
+  // (browsers block autoplay with sound), skippable, and it degrades to
+  // nothing when the file is missing (e.g. a saved-page copy of index.html)
+  // or in the headless harnesses (no HTMLVideoElement in the DOM shims).
+  function introSupported() {
+    return typeof HTMLVideoElement !== 'undefined' && typeof document.body !== 'undefined';
+  }
+  function maybeIntro() {
+    if (!introSupported()) return;
+    try { if (localStorage.getItem('pspss_intro_seen') === '1') return; } catch (e) {}
+    showIntro();
+  }
+  function showIntro() {
+    if (!introSupported() || $('#intro-back')) return;
+    const back = el('div', { class: 'intro-back', id: 'intro-back', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'PSPSS intro video' });
+    const v = el('video', { class: 'intro-video', src: 'intro.mp4', playsinline: '' });
+    v.muted = true; v.autoplay = true;
+    let closed = false;
+    const done = () => {
+      if (closed) return;
+      closed = true;
+      try { localStorage.setItem('pspss_intro_seen', '1'); } catch (e) {}
+      document.removeEventListener('keydown', onKey);
+      try { v.pause(); } catch (e) {}
+      back.remove();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(); };
+    v.addEventListener('ended', done);
+    v.addEventListener('error', done); // no intro.mp4 next to the page -> skip silently
+    const unmute = el('button', { class: 'btn ghost', onclick: () => { v.muted = !v.muted; unmute.textContent = v.muted ? '🔇 Unmute' : '🔊 Mute'; } }, ['🔇 Unmute']);
+    const skip = el('button', { class: 'btn', onclick: done }, ['Skip intro ▸']);
+    back.appendChild(v);
+    back.appendChild(el('div', { class: 'btnrow intro-controls' }, [unmute, skip]));
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(back);
+    try { skip.focus(); } catch (e) {}
+    try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  }
+
   // ---- boot ----
-  document.addEventListener('DOMContentLoaded', renderStart);
+  document.addEventListener('DOMContentLoaded', () => { renderStart(); maybeIntro(); });
 })();
