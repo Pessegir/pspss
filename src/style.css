@@ -317,3 +317,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 }
 .intro-video { max-width: min(94vw, 960px); max-height: 76vh; background: #000; }
 .intro-controls { justify-content: center; }
+
+/* ---- welcome (Prof. Hal) ---- */
+.welcome-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.welcome-img {
+  width: 84px; height: 84px; object-fit: contain; image-rendering: pixelated;
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 10px; padding: 4px; flex: none;
+}
+.welcome-head h2 { margin: 0 0 2px; }
+.welcome-name { font-weight: 700; color: #b45309; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.welcome-speech {
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 10px;
+  padding: 12px 14px; line-height: 1.5; font-style: italic; margin-bottom: 8px;
+}
