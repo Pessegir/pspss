@@ -15,7 +15,10 @@ to self-containment: **`intro.mp4`** (the first-visit opening video, 2.6 MB — 
 ships as a sibling asset; the game degrades silently when it's absent (`ui.js` `showIntro()`
 closes on the video `error` event, and the overlay is gated on `HTMLVideoElement` so the
 headless harnesses never see it). Replay via the start screen's 🎬 Intro button; first-visit
-autoplay is muted (browser policy) and remembered in localStorage `pspss_intro_seen`.
+autoplay is muted (browser policy) and remembered in localStorage `pspss_intro_seen`. When the
+first-visit intro finishes (or is skipped/errors), `showWelcome()` chains a one-time **welcome
+modal**: Prof. Hal introduces the premise — replayable via the 👋 Welcome button. It explains the
+game, never a level, so the no-hints invariant holds.
 
 Six campaigns: **C1 Publish or Perish** (classic data-torture QRPs), **C2 The Methods
 Section** (abuse the *analysis*), **C3 In Bayes We Trust** (metric = **Bayes factor**), **C4 Open

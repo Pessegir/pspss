@@ -340,6 +340,19 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 .intro-video { max-width: min(94vw, 960px); max-height: 76vh; background: #000; }
 .intro-controls { justify-content: center; }
 
+/* ---- welcome (Prof. Hal) ---- */
+.welcome-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.welcome-img {
+  width: 84px; height: 84px; object-fit: contain; image-rendering: pixelated;
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 10px; padding: 4px; flex: none;
+}
+.welcome-head h2 { margin: 0 0 2px; }
+.welcome-name { font-weight: 700; color: #b45309; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.welcome-speech {
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 10px;
+  padding: 12px 14px; line-height: 1.5; font-style: italic; margin-bottom: 8px;
+}
+
 </style>
 </head>
 <body>
@@ -6050,6 +6063,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       el('button', { class: 'btn ghost', onclick: showQuiz }, ['🔍 Spot the QRP']),
       el('button', { class: 'btn ghost', onclick: showDashboard }, ['🎓 Career Dashboard']),
       el('button', { class: 'btn ghost', onclick: showIntro, title: 'Replay the intro video' }, ['🎬 Intro']),
+      el('button', { class: 'btn ghost', onclick: showWelcome, title: 'Prof. Hal explains the game (poorly)' }, ['👋 Welcome']),
     ]);
     wrap.appendChild(tools);
 
@@ -7261,6 +7275,40 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     setTimeout(() => t.remove(), 2600);
   }
 
+  // ---- welcome (Prof. Hal introduces the game) ----
+  // Chained after the first-visit intro video (including when the video is
+  // skipped or errors — onboarding must not die with the asset), replayable
+  // via the start screen's 👋 Welcome button. It introduces the PREMISE, not
+  // answers: Hal stays a temptation mechanic, so the no-hints invariant holds.
+  function showWelcome() {
+    const body = el('div', { class: 'welcome-wrap' });
+    const head = el('div', { class: 'welcome-head' });
+    if (CHAR) head.appendChild(el('img', { class: 'welcome-img', src: CHAR.IMG, alt: CHAR.NAME }));
+    head.appendChild(el('div', {}, [
+      el('h2', { text: '👋 Welcome to the lab' }),
+      el('div', { class: 'welcome-name', text: CHAR ? CHAR.NAME + ' — ' + CHAR.ROLE : 'Your new department' }),
+    ]));
+    body.appendChild(head);
+    body.appendChild(el('div', { class: 'welcome-speech', html:
+      '“Ah — the new hire. Sit. I\'m Hal. Emeritus. I <i>consult</i>.<br><br>' +
+      'Here\'s the situation. Every dataset in this building has been rigged by the gods of tenure so the ' +
+      'honest analysis comes up empty. Your job is to publish anyway: <b>diagnose</b> the flaw from the ' +
+      'figures — diagnostics cost nothing — then apply exactly the right <b>Questionable Research ' +
+      'Practice</b> until <b>p &lt; .05</b> falls out. Fewer moves, more stars. The statistics underneath ' +
+      'are real, which I personally consider a design flaw.<br><br>' +
+      'After every “publication” the <b>Debrief</b> reveals what the data actually held and what your ' +
+      'manoeuvre truly did to the false-positive rate — with citations, the ghouls. The campaigns ' +
+      'escalate: first you torture data, then whole models, then Bayes factors… and eventually the Open ' +
+      'Science crowd makes you win <i>honestly</i>. Dark times.<br><br>' +
+      'If you\'re ever stuck, click my face. I always know what to do.”' }));
+    body.appendChild(el('div', { class: 'hint', text: '(He does not. It\'s log transforms. It\'s always log transforms.)' }));
+    body.appendChild(el('div', { class: 'btnrow' }, [
+      el('button', { class: 'btn', onclick: closeModal }, ['Begin — p < .05 awaits']),
+      el('button', { class: 'btn ghost', onclick: showHow }, ['How it all works']),
+    ]));
+    modal('Welcome to PSPSS', body, { dismissable: true });
+  }
+
   // ---- intro video ----
   // Plays intro.mp4 (a sibling asset — 2.6 MB is too big to inline in the
   // single-file bundle) over the start screen on first visit. Muted autoplay
@@ -7273,9 +7321,9 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   function maybeIntro() {
     if (!introSupported()) return;
     try { if (localStorage.getItem('pspss_intro_seen') === '1') return; } catch (e) {}
-    showIntro();
+    showIntro(true);
   }
-  function showIntro() {
+  function showIntro(firstVisit) {
     if (!introSupported() || $('#intro-back')) return;
     const back = el('div', { class: 'intro-back', id: 'intro-back', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'PSPSS intro video' });
     const v = el('video', { class: 'intro-video', src: 'intro.mp4', playsinline: '' });
@@ -7288,6 +7336,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       document.removeEventListener('keydown', onKey);
       try { v.pause(); } catch (e) {}
       back.remove();
+      if (firstVisit === true) showWelcome(); // meet Hal once the credits roll
     };
     const onKey = (e) => { if (e.key === 'Escape') done(); };
     v.addEventListener('ended', done);

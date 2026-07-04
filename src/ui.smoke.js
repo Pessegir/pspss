@@ -224,6 +224,15 @@ check('mode choice is persisted', store['pspss_mode'] === 'pure' || store['pspss
 check('exit-to-campaign cleared the game state (pill re-renders the map, not the level)',
   appNode.textContent.includes('Career Dashboard'));
 
+console.log('\nWelcome (Prof. Hal introduces the game):');
+clickBtn('Welcome');
+check('welcome modal opens with Hal', modalText().includes('Prof. Hal'));
+check('welcome explains the premise (QRPs, p < .05)', (() => { const s = q('.welcome-speech')[0]; return s && s.innerHTML.includes('Questionable Research') && s.innerHTML.includes('p &lt; .05'); })());
+check('welcome warns his advice is bad (temptation, not hints)', modalText().includes('log transforms'));
+check('welcome shows his portrait', q('.welcome-img').length === 1);
+clickBtn('Begin');
+check('welcome closes into the campaign map', modalText() === '');
+
 console.log('\nSave export / import / wipe:');
 clickBtn('Career Dashboard');
 clickBtn('Export save');
