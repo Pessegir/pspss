@@ -108,9 +108,18 @@
     return betai(0.5 * df, 0.5, x);
   }
 
-  // Two-tailed p-value for a standard-normal z statistic.
+  // Two-tailed p-value for a standard-normal z statistic. The erf
+  // approximation's absolute error (~1e-7) swamps the true tail beyond |z|≈5,
+  // eventually returning a literal 0; switch to the asymptotic Mills-ratio
+  // expansion there so extreme z's report a real (tiny) p, never 0.
   function normalTwoTailedP(z) {
-    return 2 * (1 - normalCDF(Math.abs(z)));
+    const az = Math.abs(z);
+    if (az < 5) return 2 * (1 - normalCDF(az));
+    const inv2 = 1 / (az * az);
+    const tail =
+      (Math.exp(-0.5 * az * az) / (az * Math.sqrt(2 * Math.PI))) *
+      (1 - inv2 + 3 * inv2 * inv2);
+    return Math.max(2 * tail, Number.MIN_VALUE);
   }
 
   // ---- Descriptives --------------------------------------------------------
