@@ -1,0 +1,32 @@
+# PSPSS CI — the full headless suite plus a bundle-drift check.
+# Bare node, no npm: test.sh rebuilds index.html and runs every *.test.js,
+# levels.verify and both smoke harnesses (see CLAUDE.md).
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run the full test suite (rebuilds the bundle)
+        run: ./test.sh
+
+      # The committed index.html is the deployed artifact; it must match what
+      # build.js produces from src/. test.sh already rebuilt it above, so any
+      # diff here means someone edited src/ and forgot to commit the bundle.
+      - name: Bundle drift check
+        run: |
+          git diff --exit-code index.html || {
+            echo "::error file=index.html::index.html is stale — run 'node build.js' and commit the result"
+            exit 1
+          }
