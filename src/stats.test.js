@@ -54,6 +54,10 @@ const mw = S.mannWhitneyU([1, 2, 3, 4], [5, 6, 7, 8]);
 approx('U', mw.U, 0); assert('p < 0.05 for full separation', mw.p < 0.05);
 const mw2 = S.mannWhitneyU([1, 2, 3, 4], [1, 2, 3, 4]);
 assert('p ~ 1 (>0.8) for identical groups', mw2.p > 0.8);
+// Degenerate case: every value tied to a constant collapses the variance to 0;
+// must return p = 1, not NaN (mirrors the wilcoxonSignedRank guard).
+const mwConst = S.mannWhitneyU([5, 5, 5, 5], [5, 5, 5, 5]);
+assert('all-constant groups give p = 1, z = 0 (no NaN)', mwConst.p === 1 && mwConst.z === 0);
 
 console.log('\nWilcoxon signed-rank:');
 const wsr = S.wilcoxonSignedRank([10, 12, 14, 16, 18], [1, 2, 3, 4, 5]);
