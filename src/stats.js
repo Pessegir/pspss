@@ -235,11 +235,12 @@
     Object.values(counts).forEach((c) => {
       tieSum += c * c * c - c;
     });
-    const sigmaU = Math.sqrt(
-      ((na * nb) / 12) * (N + 1 - tieSum / (N * (N - 1)))
-    );
-    const z = (U - muU + 0.5) / sigmaU; // continuity correction toward the mean
-    return { U, z, p: normalTwoTailedP(z) };
+    // The tie correction can drive the variance to 0 (all values identical);
+    // guard like wilcoxonSignedRank below so p is 1 instead of NaN.
+    const varU = ((na * nb) / 12) * (N + 1 - tieSum / (N * (N - 1)));
+    const sigmaU = Math.sqrt(Math.max(0, varU));
+    const z = sigmaU > 0 ? (U - muU + 0.5) / sigmaU : 0; // continuity correction toward the mean
+    return { U, z, p: sigmaU > 0 ? normalTwoTailedP(z) : 1 };
   }
 
   // Wilcoxon signed-rank (paired, nonparametric). Normal approximation. Two-tailed.
