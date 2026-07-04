@@ -309,3 +309,11 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   position: absolute; top: 3px; right: 4px; border: none; background: none;
   cursor: pointer; color: #9a3412; font-size: 13px; line-height: 1; padding: 2px;
 }
+
+/* ---- intro video overlay ---- */
+.intro-back {
+  position: fixed; inset: 0; z-index: 300; background: #000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+}
+.intro-video { max-width: min(94vw, 960px); max-height: 76vh; background: #000; }
+.intro-controls { justify-content: center; }
