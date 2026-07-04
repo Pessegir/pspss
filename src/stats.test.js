@@ -22,6 +22,16 @@ approx('normalTwoTailedP(1.96)', S.normalTwoTailedP(1.96), 0.05, 4e-3);
 approx('tDistTwoTailedP(1.96, 1e7)', S.tDistTwoTailedP(1.96, 1e7), 0.05, 4e-3);
 approx('tDistTwoTailedP(5, 8)', S.tDistTwoTailedP(5, 8), 0.001053, 1e-4);
 approx('tDistTwoTailedP(2.262, 9)', S.tDistTwoTailedP(2.262, 9), 0.05, 2e-3);
+// Deep-tail z: the old erf path underflowed to a literal 0 past |z|≈6.
+// References: 2(1−Φ(6)) = 1.97318e-9, 2(1−Φ(8)) = 1.24419e-15 (R: 2*pnorm(-z)).
+{
+  const relOk = (got, want, tol) => Math.abs(got / want - 1) <= tol;
+  assert('normalTwoTailedP(6) ~ 1.9732e-9 (rel 1e-2)', relOk(S.normalTwoTailedP(6), 1.97318e-9, 1e-2));
+  assert('normalTwoTailedP(8) ~ 1.2442e-15 (rel 1e-2)', relOk(S.normalTwoTailedP(8), 1.24419e-15, 1e-2));
+  assert('normalTwoTailedP(40) > 0 (never literal 0)', S.normalTwoTailedP(40) > 0);
+  assert('tail is monotone across the z=5 switchover',
+    S.normalTwoTailedP(4.9) > S.normalTwoTailedP(5.1) && S.normalTwoTailedP(5.1) > S.normalTwoTailedP(6));
+}
 
 console.log('\nDescriptives:');
 approx('mean', S.mean([1, 2, 3, 4, 5]), 3);
