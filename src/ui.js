@@ -341,6 +341,7 @@
     const label = el('div', { class: 'menu-label', text: name, tabindex: '0', role: 'button', 'aria-haspopup': 'true' });
     m.appendChild(label);
     const dd = el('div', { class: 'dropdown', role: 'menu' });
+    const nav = []; // enabled items, in order, for arrow-key roving
     items(name).forEach((it) => {
       if (it.sep) { dd.appendChild(el('div', { class: 'sep' })); return; }
       const cls = 'item' + (it.disabled ? ' disabled' : '') + (it.danger ? ' danger' : '');
@@ -349,9 +350,19 @@
         el('span', { class: 'cost', text: it.cost || '' }),
       ]);
       if (!it.disabled) {
+        nav.push(node);
         const act = (e) => { e.stopPropagation(); closeMenus(); it.run(); };
         node.addEventListener('click', act);
-        node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); act(e); } });
+        node.addEventListener('keydown', (e) => {
+          const pd = () => { e.preventDefault && e.preventDefault(); };
+          const i = nav.indexOf(node);
+          if (e.key === 'Enter' || e.key === ' ') { pd(); act(e); }
+          else if (e.key === 'ArrowDown') { pd(); tryFocus(nav[(i + 1) % nav.length]); }
+          else if (e.key === 'ArrowUp') { pd(); tryFocus(nav[(i - 1 + nav.length) % nav.length]); }
+          else if (e.key === 'Home') { pd(); tryFocus(nav[0]); }
+          else if (e.key === 'End') { pd(); tryFocus(nav[nav.length - 1]); }
+          else if (e.key === 'Escape') { pd(); closeMenus(); tryFocus(label); }
+        });
       }
       dd.appendChild(node);
     });
@@ -363,7 +374,13 @@
       if (!wasOpen) m.classList.add('open');
     };
     label.addEventListener('click', toggle);
-    label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); } });
+    label.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); }
+      else if (e.key === 'ArrowDown') { // open + focus the first item
+        e.preventDefault && e.preventDefault();
+        closeMenus(); m.classList.add('open'); tryFocus(nav[0]);
+      }
+    });
     return m;
   }
   function closeMenus() { document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')); }
@@ -632,8 +649,28 @@
   // ========================================================================
   // MODALS
   // ========================================================================
+  // Focusable-element walker (own traversal: works in the real DOM and in the
+  // smoke shim, whose querySelector can't handle compound selectors).
+  function focusables(root, acc) {
+    acc = acc || [];
+    for (const c of root.children || []) {
+      const tag = (c.tagName || '').toLowerCase();
+      const ti = c.getAttribute ? c.getAttribute('tabindex') : null;
+      const focusableTag = tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'a';
+      if ((focusableTag || (ti != null && ti !== '-1')) && !c.disabled) acc.push(c);
+      focusables(c, acc);
+    }
+    return acc;
+  }
+  function tryFocus(n) { try { if (n && n.focus) n.focus(); } catch (e) {} }
+
+  let _modalReturnFocus = null; // element to restore focus to when the dialog closes
   function modal(barText, bodyNode, opts) {
+    const hadModal = modalOpen();
     closeModal();
+    // Remember where the user was — but only for the first dialog in a chain
+    // (dashboard -> export -> back must not point back into a dead modal).
+    if (!hadModal) _modalReturnFocus = document.activeElement || null;
     const back = el('div', { class: 'modal-back', id: 'modal-back' });
     const m = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': barText });
     m.appendChild(el('div', { class: 'bar', text: barText }));
@@ -643,11 +680,17 @@
     back.appendChild(m);
     if (opts && opts.dismissable) back.addEventListener('click', (e) => { if (e.target === back) closeModal(); });
     $('#modal-root').appendChild(back);
+    tryFocus(focusables(m)[0]); // move focus into the dialog
     return body;
   }
-  function closeModal() { $('#modal-root').innerHTML = ''; }
+  function closeModal() {
+    const wasOpen = modalOpen();
+    $('#modal-root').innerHTML = '';
+    if (wasOpen) { tryFocus(_modalReturnFocus); _modalReturnFocus = null; }
+  }
   function modalOpen() { const r = $('#modal-root'); return r && r.children && r.children.length > 0; }
-  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless typing).
+  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless
+  // typing); Tab is trapped inside the dialog (wraps at both ends).
   document.addEventListener('keydown', (e) => {
     if (!modalOpen()) return;
     if (e.key === 'Escape') { closeModal(); }
@@ -656,6 +699,16 @@
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
       const b = $('#modal-root').querySelector('.btn');
       if (b) { e.preventDefault && e.preventDefault(); b.click(); }
+    } else if (e.key === 'Tab') {
+      const list = focusables($('#modal-root'));
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(last);
+      } else if (!e.shiftKey && (active === last || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(first);
+      }
     }
   });
 
@@ -1347,7 +1400,7 @@
 
   // ---- toast ----
   function toast(msg) {
-    const t = el('div', { style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
+    const t = el('div', { class: 'toast', role: 'status', 'aria-live': 'polite', style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2600);
   }

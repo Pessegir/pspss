@@ -93,7 +93,7 @@ html, body {
   white-space: nowrap;
 }
 .dropdown .item:hover { background: #3b6ea5; color: #fff; }
-.dropdown .item.disabled { color: #b0aa9c; pointer-events: none; }
+.dropdown .item.disabled { color: #8d8778; pointer-events: none; }
 .dropdown .item.danger { color: #b91c1c; }
 .dropdown .item:hover.danger { background: #b91c1c; color: #fff; }
 .dropdown .sep { height: 1px; background: #d8d3c6; margin: 3px 0; }
@@ -173,7 +173,7 @@ table.grid th {
   color: #33415c;
   font-family: "Segoe UI", sans-serif;
 }
-table.grid th.rownum, table.grid td.rownum { background: #f0ede4; color: #9a958a; text-align: center; }
+table.grid th.rownum, table.grid td.rownum { background: #f0ede4; color: #6f6a5c; text-align: center; }
 table.grid td.group { text-align: center; font-weight: 600; }
 table.grid td.cat { text-align: center; font-family: "Segoe UI", sans-serif; }
 table.grid .activecol { background: #fff7e6; }
@@ -229,7 +229,7 @@ button.btn.danger { background: #b91c1c; border-color: #991b1b; }
   background: #fbfaf6; border: 1px solid #c4bfb1; border-radius: 5px; padding: 11px 13px; cursor: pointer;
 }
 .levelcard:hover { border-color: #3b6ea5; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-.levelcard.locked { opacity: .5; cursor: not-allowed; }
+.levelcard.locked { opacity: .62; cursor: not-allowed; }
 .levelcard .lt { font-weight: 700; }
 .levelcard .lr { font-size: 11px; color: #6b6450; font-style: italic; }
 .levelcard .stars { color: #f59e0b; letter-spacing: 2px; margin-top: 4px; }
@@ -267,7 +267,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 .dash-stat .k { font-size: 10px; text-transform: uppercase; color: #7a7460; }
 .dash-stat .v { font-size: 18px; font-weight: 700; font-family: "Consolas", monospace; }
 .ach-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.ach-item { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #f0ede4; color: #9a958a; }
+.ach-item { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #f0ede4; color: #6f6a5c; }
 .ach-item.got { background: #fffbeb; color: #1f2937; }
 
 /* Quiz */
@@ -6264,6 +6264,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     const label = el('div', { class: 'menu-label', text: name, tabindex: '0', role: 'button', 'aria-haspopup': 'true' });
     m.appendChild(label);
     const dd = el('div', { class: 'dropdown', role: 'menu' });
+    const nav = []; // enabled items, in order, for arrow-key roving
     items(name).forEach((it) => {
       if (it.sep) { dd.appendChild(el('div', { class: 'sep' })); return; }
       const cls = 'item' + (it.disabled ? ' disabled' : '') + (it.danger ? ' danger' : '');
@@ -6272,9 +6273,19 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
         el('span', { class: 'cost', text: it.cost || '' }),
       ]);
       if (!it.disabled) {
+        nav.push(node);
         const act = (e) => { e.stopPropagation(); closeMenus(); it.run(); };
         node.addEventListener('click', act);
-        node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); act(e); } });
+        node.addEventListener('keydown', (e) => {
+          const pd = () => { e.preventDefault && e.preventDefault(); };
+          const i = nav.indexOf(node);
+          if (e.key === 'Enter' || e.key === ' ') { pd(); act(e); }
+          else if (e.key === 'ArrowDown') { pd(); tryFocus(nav[(i + 1) % nav.length]); }
+          else if (e.key === 'ArrowUp') { pd(); tryFocus(nav[(i - 1 + nav.length) % nav.length]); }
+          else if (e.key === 'Home') { pd(); tryFocus(nav[0]); }
+          else if (e.key === 'End') { pd(); tryFocus(nav[nav.length - 1]); }
+          else if (e.key === 'Escape') { pd(); closeMenus(); tryFocus(label); }
+        });
       }
       dd.appendChild(node);
     });
@@ -6286,7 +6297,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       if (!wasOpen) m.classList.add('open');
     };
     label.addEventListener('click', toggle);
-    label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); } });
+    label.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); }
+      else if (e.key === 'ArrowDown') { // open + focus the first item
+        e.preventDefault && e.preventDefault();
+        closeMenus(); m.classList.add('open'); tryFocus(nav[0]);
+      }
+    });
     return m;
   }
   function closeMenus() { document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')); }
@@ -6555,8 +6572,28 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   // ========================================================================
   // MODALS
   // ========================================================================
+  // Focusable-element walker (own traversal: works in the real DOM and in the
+  // smoke shim, whose querySelector can't handle compound selectors).
+  function focusables(root, acc) {
+    acc = acc || [];
+    for (const c of root.children || []) {
+      const tag = (c.tagName || '').toLowerCase();
+      const ti = c.getAttribute ? c.getAttribute('tabindex') : null;
+      const focusableTag = tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'a';
+      if ((focusableTag || (ti != null && ti !== '-1')) && !c.disabled) acc.push(c);
+      focusables(c, acc);
+    }
+    return acc;
+  }
+  function tryFocus(n) { try { if (n && n.focus) n.focus(); } catch (e) {} }
+
+  let _modalReturnFocus = null; // element to restore focus to when the dialog closes
   function modal(barText, bodyNode, opts) {
+    const hadModal = modalOpen();
     closeModal();
+    // Remember where the user was — but only for the first dialog in a chain
+    // (dashboard -> export -> back must not point back into a dead modal).
+    if (!hadModal) _modalReturnFocus = document.activeElement || null;
     const back = el('div', { class: 'modal-back', id: 'modal-back' });
     const m = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': barText });
     m.appendChild(el('div', { class: 'bar', text: barText }));
@@ -6566,11 +6603,17 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     back.appendChild(m);
     if (opts && opts.dismissable) back.addEventListener('click', (e) => { if (e.target === back) closeModal(); });
     $('#modal-root').appendChild(back);
+    tryFocus(focusables(m)[0]); // move focus into the dialog
     return body;
   }
-  function closeModal() { $('#modal-root').innerHTML = ''; }
+  function closeModal() {
+    const wasOpen = modalOpen();
+    $('#modal-root').innerHTML = '';
+    if (wasOpen) { tryFocus(_modalReturnFocus); _modalReturnFocus = null; }
+  }
   function modalOpen() { const r = $('#modal-root'); return r && r.children && r.children.length > 0; }
-  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless typing).
+  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless
+  // typing); Tab is trapped inside the dialog (wraps at both ends).
   document.addEventListener('keydown', (e) => {
     if (!modalOpen()) return;
     if (e.key === 'Escape') { closeModal(); }
@@ -6579,6 +6622,16 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
       const b = $('#modal-root').querySelector('.btn');
       if (b) { e.preventDefault && e.preventDefault(); b.click(); }
+    } else if (e.key === 'Tab') {
+      const list = focusables($('#modal-root'));
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(last);
+      } else if (!e.shiftKey && (active === last || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(first);
+      }
     }
   });
 
@@ -7270,7 +7323,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
   // ---- toast ----
   function toast(msg) {
-    const t = el('div', { style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
+    const t = el('div', { class: 'toast', role: 'status', 'aria-live': 'polite', style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2600);
   }

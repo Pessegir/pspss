@@ -146,9 +146,14 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   suspicion**; the QRP arsenal is present and loses (it raises suspicion). `levels.verify.js` checks
   only honest tools can win C4.
 - **Accessibility (don't regress).** Status is colour-independent (✓/✗ text token on the metric card
-  + `out-p` glyph). Modals are `role="dialog"` and close on Esc / confirm on Enter; menu labels/items
-  are focusable. SVG figures get `role="img"`+`<title>`. Layout is responsive (`@media max-width:1000px`).
-  Optional sound (off by default, `pspss_sound`) is guarded for headless/Node.
+  + `out-p` glyph). Modals are `role="dialog"`, close on Esc / confirm on Enter, **move focus in on
+  open, trap Tab (wraps), and restore focus to the opener on close** (`focusables()` walker +
+  `_modalReturnFocus`). Menu labels/items are focusable with **arrow-key roving**
+  (ArrowUp/Down/Home/End, Esc refocuses the label). Toasts are `role="status"` + `aria-live`.
+  Muted greys meet AA contrast (`#6f6a5c` on the beige panels; locked cards ≥ `opacity:.62`).
+  SVG figures get `role="img"`+`<title>`. Layout is responsive (`@media max-width:1000px`).
+  Optional sound (off by default, `pspss_sound`) is guarded for headless/Node. All of this is
+  asserted in `ui.smoke.js` (the shim tracks `focus()`/`activeElement`).
 - **The DOM shim has limits.** It does not parse `innerHTML` strings into queryable nodes (build
   real nodes if you need to query them) and needs `createElementNS` for SVG. Both smoke harnesses
   must pass.
