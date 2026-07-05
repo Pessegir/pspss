@@ -71,7 +71,7 @@ html, body {
   white-space: nowrap;
 }
 .dropdown .item:hover { background: #3b6ea5; color: #fff; }
-.dropdown .item.disabled { color: #b0aa9c; pointer-events: none; }
+.dropdown .item.disabled { color: #8d8778; pointer-events: none; }
 .dropdown .item.danger { color: #b91c1c; }
 .dropdown .item:hover.danger { background: #b91c1c; color: #fff; }
 .dropdown .sep { height: 1px; background: #d8d3c6; margin: 3px 0; }
@@ -151,7 +151,7 @@ table.grid th {
   color: #33415c;
   font-family: "Segoe UI", sans-serif;
 }
-table.grid th.rownum, table.grid td.rownum { background: #f0ede4; color: #9a958a; text-align: center; }
+table.grid th.rownum, table.grid td.rownum { background: #f0ede4; color: #6f6a5c; text-align: center; }
 table.grid td.group { text-align: center; font-weight: 600; }
 table.grid td.cat { text-align: center; font-family: "Segoe UI", sans-serif; }
 table.grid .activecol { background: #fff7e6; }
@@ -207,7 +207,7 @@ button.btn.danger { background: #b91c1c; border-color: #991b1b; }
   background: #fbfaf6; border: 1px solid #c4bfb1; border-radius: 5px; padding: 11px 13px; cursor: pointer;
 }
 .levelcard:hover { border-color: #3b6ea5; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-.levelcard.locked { opacity: .5; cursor: not-allowed; }
+.levelcard.locked { opacity: .62; cursor: not-allowed; }
 .levelcard .lt { font-weight: 700; }
 .levelcard .lr { font-size: 11px; color: #6b6450; font-style: italic; }
 .levelcard .stars { color: #f59e0b; letter-spacing: 2px; margin-top: 4px; }
@@ -245,7 +245,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 .dash-stat .k { font-size: 10px; text-transform: uppercase; color: #7a7460; }
 .dash-stat .v { font-size: 18px; font-weight: 700; font-family: "Consolas", monospace; }
 .ach-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.ach-item { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #f0ede4; color: #9a958a; }
+.ach-item { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #f0ede4; color: #6f6a5c; }
 .ach-item.got { background: #fffbeb; color: #1f2937; }
 
 /* Quiz */
@@ -329,4 +329,18 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 .welcome-speech {
   background: #fffbe9; border: 2px solid #b45309; border-radius: 10px;
   padding: 12px 14px; line-height: 1.5; font-style: italic; margin-bottom: 8px;
+}
+
+/* ---- resume banner (start screen) ---- */
+.resume-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 8px;
+  padding: 8px 12px; margin: 10px 0 2px; font-size: 13px;
+}
+
+/* ---- share card ---- */
+.share-text {
+  width: 100%; height: 96px; font-family: Consolas, monospace; font-size: 12px;
+  margin-top: 8px; border: 1px solid #9a958a; border-radius: 4px; padding: 6px;
+  background: #fffdf6; resize: vertical;
 }

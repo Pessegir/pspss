@@ -99,6 +99,53 @@
     try { return Object.assign(careerDefaults(), JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return careerDefaults(); }
   }
   function save() { try { localStorage.setItem('pspss_progress', JSON.stringify(App.progress)); } catch (e) {} }
+  // ---- mid-level resume ----
+  // The engine is deterministic (seeded data AND seeded event rolls), so an
+  // in-progress study is just {level, seed, mode, action list}: replaying the
+  // actions on a fresh state reconstructs it exactly. Saved after every move,
+  // cleared when the study ends. Prereg mode is excluded (its commitment flow
+  // is a one-shot; resuming it would dodge the "no take-backs" rule).
+  function getResume() {
+    try {
+      const d = JSON.parse(localStorage.getItem('pspss_resume') || 'null');
+      if (d && d.v === 1 && d.levelId && Array.isArray(d.actions) && d.actions.length) return d;
+    } catch (e) {}
+    return null;
+  }
+  function saveResume() {
+    if (!App.state || App.state.finished || App.prereg) { clearResume(); return; }
+    const actions = App.state.log.filter((l) => l.toolId).map((l) => ({ toolId: l.toolId, payload: l.payload }));
+    if (!actions.length) { clearResume(); return; }
+    try {
+      localStorage.setItem('pspss_resume', JSON.stringify({
+        v: 1, levelId: App.state.level.id, seed: App.state.seed,
+        mode: App.state.mode, gauntlet: !!App.gauntlet, actions,
+      }));
+    } catch (e) {}
+  }
+  function clearResume() { try { localStorage.removeItem('pspss_resume'); } catch (e) {} }
+  function resumeStudy() {
+    const d = getResume();
+    if (!d) return;
+    const idx = LEVELS.findIndex((l) => l.id === d.levelId);
+    if (idx < 0) { clearResume(); renderStart(); return; }
+    App.levelIndex = idx;
+    App.gauntlet = !!d.gauntlet;
+    App.gauntletSeed = d.gauntlet ? d.seed : null;
+    App.mode = d.mode === 'pure' ? 'pure' : 'tenure';
+    App.state = E.newState(LEVELS[idx], d.seed, App.mode);
+    App.state._committed = false;
+    const steps = [];
+    for (const a of d.actions) {
+      const r = E.applyTool(App.state, a.toolId, a.payload);
+      if (!r || r.error) break;
+      steps.push({ analysis: r.analysis, entry: App.state.log[App.state.log.length - 1], kind: (E.TOOLS.find((t) => t.id === a.toolId) || {}).kind });
+      if (App.state.finished) break;
+    }
+    renderGame();
+    steps.forEach((s) => appendOutput(s.analysis, s.entry, s.kind));
+    toast('Study resumed. The data pretends not to notice.');
+  }
   function saveAch() { try { localStorage.setItem('pspss_ach', JSON.stringify(App.achievements)); localStorage.setItem('pspss_career', JSON.stringify(App.career)); } catch (e) {} }
   const K = (typeof PSPSS_knowledge !== 'undefined') ? PSPSS_knowledge : null;
 
@@ -143,6 +190,19 @@
       el('button', { class: 'btn ghost', onclick: showWelcome, title: 'Prof. Hal explains the game (poorly)' }, ['👋 Welcome']),
     ]);
     wrap.appendChild(tools);
+
+    // In-progress study? Offer to pick it back up (survives reload AND exit).
+    const rd = getResume();
+    if (rd) {
+      const rlv = levelById(rd.levelId);
+      if (rlv) {
+        wrap.appendChild(el('div', { class: 'resume-bar' }, [
+          el('span', { text: `⏸ In-progress study: “${rlv.title}” — ${rd.actions.length} action${rd.actions.length === 1 ? '' : 's'} in.` }),
+          el('button', { class: 'btn', onclick: resumeStudy }, ['▶ Resume']),
+          el('button', { class: 'btn ghost', onclick: () => { clearResume(); renderStart(); toast('Study abandoned. The file drawer thanks you.'); } }, ['Discard']),
+        ]));
+      }
+    }
 
     wrap.appendChild(el('div', { class: 'hint', style: 'margin:12px 0 4px',
       html: 'Each study is rigged to be non-significant. Use the menus to <i>diagnose</i> the flaw (free), then apply the right Questionable Research Practice to torture it into significance. Fewer moves = more stars.' }));
@@ -260,6 +320,7 @@
     // random sample, so the rigged solution is not guaranteed to crack it.
     App.state = E.newState(LEVELS[idx], opts.gauntlet ? opts.seed : undefined, App.mode);
     App.state._committed = false;
+    clearResume(); // a fresh study supersedes any dangling one
     renderGame();
     showBriefing();
   }
@@ -341,6 +402,7 @@
     const label = el('div', { class: 'menu-label', text: name, tabindex: '0', role: 'button', 'aria-haspopup': 'true' });
     m.appendChild(label);
     const dd = el('div', { class: 'dropdown', role: 'menu' });
+    const nav = []; // enabled items, in order, for arrow-key roving
     items(name).forEach((it) => {
       if (it.sep) { dd.appendChild(el('div', { class: 'sep' })); return; }
       const cls = 'item' + (it.disabled ? ' disabled' : '') + (it.danger ? ' danger' : '');
@@ -349,9 +411,19 @@
         el('span', { class: 'cost', text: it.cost || '' }),
       ]);
       if (!it.disabled) {
+        nav.push(node);
         const act = (e) => { e.stopPropagation(); closeMenus(); it.run(); };
         node.addEventListener('click', act);
-        node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); act(e); } });
+        node.addEventListener('keydown', (e) => {
+          const pd = () => { e.preventDefault && e.preventDefault(); };
+          const i = nav.indexOf(node);
+          if (e.key === 'Enter' || e.key === ' ') { pd(); act(e); }
+          else if (e.key === 'ArrowDown') { pd(); tryFocus(nav[(i + 1) % nav.length]); }
+          else if (e.key === 'ArrowUp') { pd(); tryFocus(nav[(i - 1 + nav.length) % nav.length]); }
+          else if (e.key === 'Home') { pd(); tryFocus(nav[0]); }
+          else if (e.key === 'End') { pd(); tryFocus(nav[nav.length - 1]); }
+          else if (e.key === 'Escape') { pd(); closeMenus(); tryFocus(label); }
+        });
       }
       dd.appendChild(node);
     });
@@ -363,7 +435,13 @@
       if (!wasOpen) m.classList.add('open');
     };
     label.addEventListener('click', toggle);
-    label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); } });
+    label.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault && e.preventDefault(); toggle(e); }
+      else if (e.key === 'ArrowDown') { // open + focus the first item
+        e.preventDefault && e.preventDefault();
+        closeMenus(); m.classList.add('open'); tryFocus(nav[0]);
+      }
+    });
     return m;
   }
   function closeMenus() { document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')); }
@@ -430,6 +508,7 @@
     renderData();
     renderStatStrip();
     appendOutput(res.analysis, App.state.log[App.state.log.length - 1], tool.kind);
+    saveResume(); // clears itself when the study just ended
 
     if (App.prereg && App.state._committedPending) {
       App.state._committedPending = false;
@@ -632,8 +711,28 @@
   // ========================================================================
   // MODALS
   // ========================================================================
+  // Focusable-element walker (own traversal: works in the real DOM and in the
+  // smoke shim, whose querySelector can't handle compound selectors).
+  function focusables(root, acc) {
+    acc = acc || [];
+    for (const c of root.children || []) {
+      const tag = (c.tagName || '').toLowerCase();
+      const ti = c.getAttribute ? c.getAttribute('tabindex') : null;
+      const focusableTag = tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'a';
+      if ((focusableTag || (ti != null && ti !== '-1')) && !c.disabled) acc.push(c);
+      focusables(c, acc);
+    }
+    return acc;
+  }
+  function tryFocus(n) { try { if (n && n.focus) n.focus(); } catch (e) {} }
+
+  let _modalReturnFocus = null; // element to restore focus to when the dialog closes
   function modal(barText, bodyNode, opts) {
+    const hadModal = modalOpen();
     closeModal();
+    // Remember where the user was — but only for the first dialog in a chain
+    // (dashboard -> export -> back must not point back into a dead modal).
+    if (!hadModal) _modalReturnFocus = document.activeElement || null;
     const back = el('div', { class: 'modal-back', id: 'modal-back' });
     const m = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': barText });
     m.appendChild(el('div', { class: 'bar', text: barText }));
@@ -643,11 +742,17 @@
     back.appendChild(m);
     if (opts && opts.dismissable) back.addEventListener('click', (e) => { if (e.target === back) closeModal(); });
     $('#modal-root').appendChild(back);
+    tryFocus(focusables(m)[0]); // move focus into the dialog
     return body;
   }
-  function closeModal() { $('#modal-root').innerHTML = ''; }
+  function closeModal() {
+    const wasOpen = modalOpen();
+    $('#modal-root').innerHTML = '';
+    if (wasOpen) { tryFocus(_modalReturnFocus); _modalReturnFocus = null; }
+  }
   function modalOpen() { const r = $('#modal-root'); return r && r.children && r.children.length > 0; }
-  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless typing).
+  // Keyboard: Esc closes a modal; Enter triggers its primary button (unless
+  // typing); Tab is trapped inside the dialog (wraps at both ends).
   document.addEventListener('keydown', (e) => {
     if (!modalOpen()) return;
     if (e.key === 'Escape') { closeModal(); }
@@ -656,6 +761,16 @@
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
       const b = $('#modal-root').querySelector('.btn');
       if (b) { e.preventDefault && e.preventDefault(); b.click(); }
+    } else if (e.key === 'Tab') {
+      const list = focusables($('#modal-root'));
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(last);
+      } else if (!e.shiftKey && (active === last || list.indexOf(active) === -1)) {
+        e.preventDefault && e.preventDefault(); tryFocus(first);
+      }
     }
   });
 
@@ -755,7 +870,7 @@
     body.appendChild(el('h2', { text: 'Report the null result?' }));
     body.appendChild(el('div', { text: 'You will report honestly that there was no significant effect. This is good science. It is bad for your career. Proceed?' }));
     const row = el('div', { class: 'btnrow' });
-    row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); const r = E.reportNull(App.state); showEnd('honest', r.analysis); } }, ['Report it honestly']));
+    row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); const r = E.reportNull(App.state); clearResume(); showEnd('honest', r.analysis); } }, ['Report it honestly']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Keep torturing the data']));
     body.appendChild(row);
     modal('Report Null Result', body);
@@ -802,12 +917,57 @@
 
     const newly = updateCareer(event, a, stars);
 
+    // Shareable result card — plain text, pastes anywhere. Toggled inline in
+    // THIS modal (reopening showEnd would re-record the result).
+    const shareWrap = el('div', { class: 'share-wrap' });
+    shareWrap.style.display = 'none';
+    const ta = el('textarea', { class: 'share-text', readonly: '' });
+    ta.value = buildShareText(event, a, stars);
+    shareWrap.appendChild(ta);
+    shareWrap.appendChild(el('div', { class: 'btnrow' }, [
+      el('button', { class: 'btn', onclick: () => { copyText(ta); toast('Result copied. Cite responsibly.'); } }, ['Copy']),
+    ]));
+
     // The debrief is the lesson — make it the natural next step.
     const row = el('div', { class: 'btnrow' });
     row.appendChild(el('button', { class: 'btn', onclick: () => showDebrief(event, a, newly) }, ['📋 What really happened →']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { shareWrap.style.display = shareWrap.style.display === 'none' ? 'block' : 'none'; } }, ['📣 Share']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Skip to Map']));
     body.appendChild(row);
+    body.appendChild(shareWrap);
     modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+  }
+
+  // Wordle-style spoiler-free result card. All text: pastes into anything.
+  function buildShareText(event, a, stars) {
+    const st = App.state;
+    const lv = st.level;
+    const lines = ['PSPSS 📊 “' + lv.title + '”' + (App.gauntlet ? ' 🎲 gauntlet' : '')];
+    if (event === 'win' && lv.objective === 'honest') {
+      lines.push('🪪 Defensible conclusion in ' + st.moves + ' move' + (st.moves === 1 ? '' : 's') + ' — 0% suspicion, no torture');
+    } else if (event === 'win') {
+      lines.push('🏆 ' + a.metricLabel + ' = ' + fmtMetric(a) + ' in ' + st.moves + '/' + lv.par + ' moves — ' +
+        '⭐'.repeat(stars.stars) + '☆'.repeat(3 - stars.stars) + (stars.clean ? ' 🧼' : ''));
+      const blocks = Math.min(5, Math.ceil(st.suspicion / 20));
+      const block = st.suspicion > 60 ? '🟥' : st.suspicion > 30 ? '🟨' : '🟩';
+      lines.push('🕵️ ' + block.repeat(blocks) + '⬜'.repeat(5 - blocks) + ' suspicion ' + st.suspicion + '%');
+    } else if (event === 'retract') {
+      lines.push('🚨 RETRACTED after ' + st.moves + ' move' + (st.moves === 1 ? '' : 's') + '. The committee has questions.');
+    } else {
+      lines.push('🕊️ Honest null, reported as-is. A hush falls over the field.');
+    }
+    lines.push('Every statistic real. Every practice questionable.');
+    lines.push('https://pessegir.github.io/pspss/');
+    return lines.join('\n');
+  }
+  function copyText(ta) {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value);
+        return;
+      }
+    } catch (e) {}
+    try { ta.select(); document.execCommand && document.execCommand('copy'); } catch (e) {}
   }
 
   // update persistent career stats + unlock achievements; returns newly unlocked ids
@@ -1067,7 +1227,7 @@
 
     const row = el('div', { class: 'btnrow' });
     if (cleared > 0) row.appendChild(el('button', { class: 'btn', onclick: replicationEpilogue }, ['Run Replication Crisis']));
-    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.confirmWipe = false; App.progress = {}; App.achievements = []; App.career = careerDefaults(); save(); saveAch(); showDashboard(); toast('Career wiped. A fresh CV.'); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.confirmWipe = false; App.progress = {}; App.achievements = []; App.career = careerDefaults(); save(); saveAch(); clearResume(); showDashboard(); toast('Career wiped. A fresh CV.'); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: showExport }, ['⇩ Export save']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: showImport }, ['⇧ Import save']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']));
@@ -1347,7 +1507,7 @@
 
   // ---- toast ----
   function toast(msg) {
-    const t = el('div', { style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
+    const t = el('div', { class: 'toast', role: 'status', 'aria-live': 'polite', style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:5px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)', text: msg });
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2600);
   }

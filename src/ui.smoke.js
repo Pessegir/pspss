@@ -30,6 +30,7 @@ class N {
   addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); }
   fire(t, ev) { (this._listeners[t] || []).slice().forEach((fn) => fn(ev || mkEv(this))); }
   click() { this.fire('click', mkEv(this)); }
+  focus() { document.activeElement = this; }
   querySelector(sel) { return walk(this, sel, false); }
   querySelectorAll(sel) { return walk(this, sel, true, []); }
 }
@@ -40,12 +41,12 @@ const appNode = new N('div'); appNode.setAttribute('id', 'app');
 const modalRoot = new N('div'); modalRoot.setAttribute('id', 'modal-root');
 docBody.appendChild(appNode); docBody.appendChild(modalRoot);
 const document = {
-  body: docBody, _listeners: {},
+  body: docBody, _listeners: {}, activeElement: null,
   createElement: (t) => new N(t),
   createElementNS: (ns, t) => new N(t),
   createTextNode: (t) => { const n = new N('#text'); n._text = t; return n; },
   addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
-  fire(t) { (this._listeners[t] || []).forEach((fn) => fn(mkEv(document))); },
+  fire(t, ev) { (this._listeners[t] || []).forEach((fn) => fn(ev || mkEv(document))); },
   querySelector: (sel) => (matches(docBody, sel) ? docBody : walk(docBody, sel, false)),
   querySelectorAll: (sel) => walk(docBody, sel, true, []),
 };
@@ -209,12 +210,40 @@ check('correct password unlocks all campaigns', store['pspss_unlock'] === '1');
 check('start screen now offers re-lock', q('a').filter((n) => n.textContent.includes('Re-lock')).length > 0);
 
 console.log('\nAccessibility:');
-card('The One Bad Apple').fire('click');
+const apple = card('The One Bad Apple');
+apple.focus(); apple.fire('click');
 check('modal has role=dialog', (q('.modal')[0] || {}).attrs && q('.modal')[0].attrs.role === 'dialog');
+check('opening a modal moves focus into it', document.activeElement !== apple && (document.activeElement.tagName || '') === 'button');
+// Tab trap: park focus on the LAST focusable, Tab must wrap to the first
+{
+  const btns = modalRoot.querySelectorAll('button');
+  btns[btns.length - 1].focus();
+  document.fire('keydown', { key: 'Tab', preventDefault() {} });
+  check('Tab wraps inside the modal (trap)', document.activeElement === btns[0]);
+  document.fire('keydown', { key: 'Escape' });
+  check('Esc closes and RESTORES focus to the opener', document.activeElement === apple);
+}
+apple.fire('click');
 clickBtn('Begin Analysis');
 check('stat card exposes a text status token (✓/✗), not colour only', /✓|✗/.test(document.querySelector('#stat-p').textContent));
 check('menu labels are focusable (tabindex)', q('.menu-label').some((n) => n.attrs.tabindex === '0'));
-document.fire('keydown'); // smoke: global keydown handler registered without throwing
+// Arrow-key menu navigation
+{
+  const label = q('.menu-label')[0];
+  label.focus();
+  label.fire('keydown', { key: 'ArrowDown', preventDefault() {} });
+  const first = document.activeElement;
+  check('ArrowDown on a menu label opens it and focuses the first item',
+    label.parentElement._cls.has('open') && first && first.attrs && first.attrs.role === 'menuitem');
+  first.fire('keydown', { key: 'ArrowDown', preventDefault() {} });
+  check('ArrowDown roves to the next item', document.activeElement !== first && document.activeElement.attrs.role === 'menuitem');
+  document.activeElement.fire('keydown', { key: 'Escape', preventDefault() {} });
+  check('Escape closes the menu and refocuses its label', !label.parentElement._cls.has('open') && document.activeElement === label);
+}
+// Toasts are announced to assistive tech
+clickItem('Save (to a USB');
+check('toast is an aria-live status region', (q('.toast')[0] || {}).attrs && q('.toast')[0].attrs['aria-live'] === 'polite' && q('.toast')[0].attrs.role === 'status');
+document.fire('keydown'); // smoke: global keydown handler tolerates a keyless event
 clickItem('Exit to Campaign');
 
 console.log('\nMode toggle:');
@@ -253,6 +282,38 @@ q('textarea')[0].value = exported;
 clickBtn('Import');
 check('import round-trips the save', JSON.parse(store['pspss_career'] || '{}').publications >= 1 && JSON.parse(store['pspss_ach'] || '[]').length >= 1);
 clickBtn('Close');
+
+console.log('\nMid-level resume:');
+card('The One Bad Apple').fire('click');
+clickBtn('Begin Analysis');
+clickItem('Reframe Hypothesis'); // HARK: 1 move; the only tool that does NOT win the outlier level
+check('a move creates a resume save', !!store['pspss_resume']);
+const resumeBlob = JSON.parse(store['pspss_resume']);
+check('resume save records level + seed + the action', resumeBlob.levelId === 'outlier' && typeof resumeBlob.seed === 'number' && resumeBlob.actions.length === 1);
+clickItem('Exit to Campaign');
+check('start screen offers to resume (survives exit/reload)', appNode.textContent.includes('In-progress study'));
+clickBtn('▶ Resume');
+check('resume restores the level', (document.querySelector('.level-info') || {})._html && document.querySelector('.level-info')._html.includes('The One Bad Apple'));
+check('resume restores the move count', document.querySelector('#statstrip').textContent.includes('1 / '));
+check('resume replays the output pane', document.querySelector('#output').children.length >= 1);
+clickItem('Exit to Campaign');
+clickBtn('Discard');
+check('discard clears the save', !store['pspss_resume']);
+check('discard removes the banner', !appNode.textContent.includes('In-progress study'));
+// finishing a study must clear the save too
+card('The One Bad Apple').fire('click');
+clickBtn('Begin Analysis');
+clickItem('Refine Sample');
+check('winning clears the resume save', !store['pspss_resume']);
+
+console.log('\nShare card:');
+clickBtn('Share');
+const shareTa = modalRoot.querySelectorAll('textarea')[0];
+check('share card has level, metric, stars and link', !!shareTa && shareTa.value.includes('PSPSS') && shareTa.value.includes('The One Bad Apple') && shareTa.value.includes('⭐') && shareTa.value.includes('pessegir.github.io'));
+check('share card shows the suspicion meter', /[🟩🟨🟥]/.test(shareTa.value));
+clickBtn('Copy'); // must not throw in the shim
+check('copy toast confirms', q('.toast').some((t) => t.textContent.includes('copied')));
+clickBtn('Skip to Map');
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);
