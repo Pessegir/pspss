@@ -12,10 +12,8 @@
 (function (root) {
   'use strict';
 
-  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
-  const makeRNG = RNGlib.RNG;
-  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-  const groupArrays = (rows) => { const A = [], B = []; rows.forEach((r) => (r.group === 'A' ? A : B).push(r.vals.primary)); return { A, B }; };
+  const common = typeof require !== 'undefined' ? require('./levels.common') : root.PSPSS_levels_common;
+  const { makeRNG, mean, groupArrays } = common;
 
   const LEVELS = [
     // ----------------------------------------------------------- pseudoreplication (harder)
@@ -329,27 +327,13 @@
   // evaluate() honours only its own flag, so non-matching tools are inert. Levels are
   // proven solvable-at-par with the intended option among the winners (levels.verify).
   const ALL_QRP = ['choose-test', 'fit-lmm', 'choose-df', 'fit-glmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
-  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
-  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
-  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
   // Levels whose "effect" is a manufactured false positive (no real data-generating effect).
   const FALSE_POSITIVE = { 'pseudo-redux': 1, 'within-between': 1, 'wrong-level': 1 };
-  LEVELS.forEach((l) => {
-    if (l.lmm === undefined) l.lmm = true;
-    if (l.dfTestable === undefined) l.dfTestable = true;
-    if (l.glmm === undefined) l.glmm = true;
-    if (l.moderator === undefined) l.moderator = 'mod';
-    if (l.aggregable === undefined) l.aggregable = true;
-    if (l.tests === undefined) l.tests = GENERIC_TESTS;
-    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
-    if (l.specs === undefined) l.specs = GENERIC_SPECS;
-    l.allowedTools = ALL_QRP;
-    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
+  common.finish(LEVELS, {
+    defaults: { lmm: true, dfTestable: true, glmm: true, moderator: 'mod', aggregable: true, tests: common.GENERIC.tests, candidateControls: common.GENERIC.controls, specs: common.GENERIC.specs },
+    set: { allowedTools: ALL_QRP },
+    truth: (l) => (FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' }),
   });
-
-  // register onto the shared LEVELS array
-  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
-  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
 
   const api = { C5_LEVELS: LEVELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

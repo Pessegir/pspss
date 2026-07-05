@@ -82,6 +82,10 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
 - **`bayes.js`** (`PSPSS_bayes`) — JZS Bayes factors for t-tests (Rouder 2009): 1-D integral
   over the prior scale, one-sided BF, BF₀₁. (C3.)
 - **`rng.js`** — seeded mulberry32 + Box-Muller (`.next()` = uniform[0,1), `.normal()`, `.int()`).
+- **`levels.common.js`** (`PSPSS_levels_common`) — shared plumbing for the campaign files:
+  `mean`/`median`/`groupArrays`, the `GENERIC` decoy data, and `finish(LEVELS, spec)` (per-level
+  defaults + truth + registration). Loads after `levels.js`, before `levels.c2.js`. Campaign
+  arsenals (`ALL_QRP`) and false-positive maps stay in each campaign file — content, not plumbing.
 - **`levels.js`** / **`levels.c2.js`** … **`levels.c6.js`** (`PSPSS_levels`) —
   `build(seed)` returns deterministic data + a pinned tuned `seed`; C2–C6 levels carry
   `evaluate(state, ctx)` (ctx has `Stats`/`LMM`/`GLMM`/`Bayes`). C4 levels set `objective:'honest'`
