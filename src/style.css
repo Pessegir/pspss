@@ -337,3 +337,10 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   background: #fffbe9; border: 2px solid #b45309; border-radius: 8px;
   padding: 8px 12px; margin: 10px 0 2px; font-size: 13px;
 }
+
+/* ---- share card ---- */
+.share-text {
+  width: 100%; height: 96px; font-family: Consolas, monospace; font-size: 12px;
+  margin-top: 8px; border: 1px solid #9a958a; border-radius: 4px; padding: 6px;
+  background: #fffdf6; resize: vertical;
+}

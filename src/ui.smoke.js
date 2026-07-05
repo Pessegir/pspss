@@ -305,6 +305,14 @@ card('The One Bad Apple').fire('click');
 clickBtn('Begin Analysis');
 clickItem('Refine Sample');
 check('winning clears the resume save', !store['pspss_resume']);
+
+console.log('\nShare card:');
+clickBtn('Share');
+const shareTa = modalRoot.querySelectorAll('textarea')[0];
+check('share card has level, metric, stars and link', !!shareTa && shareTa.value.includes('PSPSS') && shareTa.value.includes('The One Bad Apple') && shareTa.value.includes('⭐') && shareTa.value.includes('pessegir.github.io'));
+check('share card shows the suspicion meter', /[🟩🟨🟥]/.test(shareTa.value));
+clickBtn('Copy'); // must not throw in the shim
+check('copy toast confirms', q('.toast').some((t) => t.textContent.includes('copied')));
 clickBtn('Skip to Map');
 
 console.log(`\n${pass} passed, ${fail} failed.`);

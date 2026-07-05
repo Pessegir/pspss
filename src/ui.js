@@ -917,12 +917,57 @@
 
     const newly = updateCareer(event, a, stars);
 
+    // Shareable result card — plain text, pastes anywhere. Toggled inline in
+    // THIS modal (reopening showEnd would re-record the result).
+    const shareWrap = el('div', { class: 'share-wrap' });
+    shareWrap.style.display = 'none';
+    const ta = el('textarea', { class: 'share-text', readonly: '' });
+    ta.value = buildShareText(event, a, stars);
+    shareWrap.appendChild(ta);
+    shareWrap.appendChild(el('div', { class: 'btnrow' }, [
+      el('button', { class: 'btn', onclick: () => { copyText(ta); toast('Result copied. Cite responsibly.'); } }, ['Copy']),
+    ]));
+
     // The debrief is the lesson — make it the natural next step.
     const row = el('div', { class: 'btnrow' });
     row.appendChild(el('button', { class: 'btn', onclick: () => showDebrief(event, a, newly) }, ['📋 What really happened →']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { shareWrap.style.display = shareWrap.style.display === 'none' ? 'block' : 'none'; } }, ['📣 Share']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: () => { closeModal(); renderStart(); } }, ['Skip to Map']));
     body.appendChild(row);
+    body.appendChild(shareWrap);
     modal(event === 'win' ? 'Manuscript Decision: ACCEPT' : 'Study Concluded', body);
+  }
+
+  // Wordle-style spoiler-free result card. All text: pastes into anything.
+  function buildShareText(event, a, stars) {
+    const st = App.state;
+    const lv = st.level;
+    const lines = ['PSPSS 📊 “' + lv.title + '”' + (App.gauntlet ? ' 🎲 gauntlet' : '')];
+    if (event === 'win' && lv.objective === 'honest') {
+      lines.push('🪪 Defensible conclusion in ' + st.moves + ' move' + (st.moves === 1 ? '' : 's') + ' — 0% suspicion, no torture');
+    } else if (event === 'win') {
+      lines.push('🏆 ' + a.metricLabel + ' = ' + fmtMetric(a) + ' in ' + st.moves + '/' + lv.par + ' moves — ' +
+        '⭐'.repeat(stars.stars) + '☆'.repeat(3 - stars.stars) + (stars.clean ? ' 🧼' : ''));
+      const blocks = Math.min(5, Math.ceil(st.suspicion / 20));
+      const block = st.suspicion > 60 ? '🟥' : st.suspicion > 30 ? '🟨' : '🟩';
+      lines.push('🕵️ ' + block.repeat(blocks) + '⬜'.repeat(5 - blocks) + ' suspicion ' + st.suspicion + '%');
+    } else if (event === 'retract') {
+      lines.push('🚨 RETRACTED after ' + st.moves + ' move' + (st.moves === 1 ? '' : 's') + '. The committee has questions.');
+    } else {
+      lines.push('🕊️ Honest null, reported as-is. A hush falls over the field.');
+    }
+    lines.push('Every statistic real. Every practice questionable.');
+    lines.push('https://pessegir.github.io/pspss/');
+    return lines.join('\n');
+  }
+  function copyText(ta) {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value);
+        return;
+      }
+    } catch (e) {}
+    try { ta.select(); document.execCommand && document.execCommand('copy'); } catch (e) {}
   }
 
   // update persistent career stats + unlock achievements; returns newly unlocked ids
