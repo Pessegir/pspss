@@ -303,6 +303,7 @@
       nGroups: factors[0].nLevels,
       testCol: testCol - 1,
       blups,
+      converged: !!res.converged, // variance-component optimizer met its tolerance
     };
   }
 
@@ -337,13 +338,14 @@
     let c = hi - gr * (hi - lo);
     let d = lo + gr * (hi - lo);
     let fc = f([c]), fd = f([d]);
+    let converged = false;
     for (let i = 0; i < 80; i++) {
       if (fc < fd) { hi = d; d = c; fd = fc; c = hi - gr * (hi - lo); fc = f([c]); }
       else { lo = c; c = d; fc = fd; d = lo + gr * (hi - lo); fd = f([d]); }
-      if (hi - lo < 1e-6) break;
+      if (hi - lo < 1e-6) { converged = true; break; }
     }
     const x = fc < fd ? c : d;
-    return { x: [x], f: Math.min(fc, fd) };
+    return { x: [x], f: Math.min(fc, fd), converged };
   }
 
   const api = { fit, glm, FAMILIES, makeFactor, buildU, pirls };

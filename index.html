@@ -1178,11 +1178,12 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       simplex.push(x);
     }
     let fv = simplex.map(f);
+    let converged = false;
     for (let iter = 0; iter < maxIter; iter++) {
       const order = fv.map((v, i) => i).sort((a, b) => fv[a] - fv[b]);
       simplex = order.map((i) => simplex[i]);
       fv = order.map((i) => fv[i]);
-      if (Math.abs(fv[n] - fv[0]) < tol) break;
+      if (Math.abs(fv[n] - fv[0]) < tol) { converged = true; break; }
       // centroid of all but worst
       const cen = new Array(n).fill(0);
       for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cen[j] += simplex[i][j] / n;
@@ -1209,7 +1210,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     }
     let best = 0;
     for (let i = 1; i <= n; i++) if (fv[i] < fv[best]) best = i;
-    return { x: simplex[best], f: fv[best] };
+    return { x: simplex[best], f: fv[best], converged };
   }
 
   // ---- public fit ----------------------------------------------------------
@@ -1316,6 +1317,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       nGroups,
       blups,
       icc,
+      converged: !!res.converged, // REML optimizer met its tolerance (vs. iteration cap)
     };
   }
 
@@ -1631,6 +1633,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       nGroups: factors[0].nLevels,
       testCol: testCol - 1,
       blups,
+      converged: !!res.converged, // variance-component optimizer met its tolerance
     };
   }
 
@@ -1665,13 +1668,14 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     let c = hi - gr * (hi - lo);
     let d = lo + gr * (hi - lo);
     let fc = f([c]), fd = f([d]);
+    let converged = false;
     for (let i = 0; i < 80; i++) {
       if (fc < fd) { hi = d; d = c; fd = fc; c = hi - gr * (hi - lo); fc = f([c]); }
       else { lo = c; c = d; fc = fd; d = lo + gr * (hi - lo); fd = f([d]); }
-      if (hi - lo < 1e-6) break;
+      if (hi - lo < 1e-6) { converged = true; break; }
     }
     const x = fc < fd ? c : d;
-    return { x: [x], f: Math.min(fc, fd) };
+    return { x: [x], f: Math.min(fc, fd), converged };
   }
 
   const api = { fit, glm, FAMILIES, makeFactor, buildU, pirls };

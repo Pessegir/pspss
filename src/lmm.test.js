@@ -32,6 +32,7 @@ console.log('\nLMM random-intercept == cluster-means t-test (balanced):');
   approx('df == #clusters - 2', lmm.df, nGroups - 2, 1e-6);
   approx('LMM |t| ~ cluster-means |t|', Math.abs(lmm.t), Math.abs(cm.t), 2e-2);
   approx('LMM p ~ cluster-means p', lmm.p, cm.p, 5e-3);
+  assert('REML optimizer reports convergence (not the iteration cap)', lmm.converged === true);
 }
 
 console.log('\nPseudoreplication inflates significance (OLS p < LMM p):');
