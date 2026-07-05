@@ -264,21 +264,6 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 /* sound toggle */
 .snd-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; }
 
-/* responsive: stack panes and wrap bars on narrow screens / phones */
-@media (max-width: 1000px) {
-  #app { max-width: 100%; height: auto; min-height: 100vh; }
-  .main { grid-template-columns: 1fr; }
-  .statstrip { grid-template-columns: 1fr 1fr; }
-  .menubar { flex-wrap: wrap; }
-  .pane-body { max-height: 60vh; }
-  .levelgrid { grid-template-columns: 1fr; }
-  .dash-grid { grid-template-columns: 1fr 1fr; }
-  .quiz-opts, .ach-list { grid-template-columns: 1fr; }
-  button.btn { padding: 9px 14px; }
-  .advisor { right: 6px; bottom: 6px; }
-  .advisor-img { height: 92px; }
-  .advisor-bubble { max-width: 200px; }
-}
 
 /* ---- Prof. Hal, Emeritus: the meddling (unreliable) advisor ---- */
 .advisor {
@@ -343,4 +328,41 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   width: 100%; height: 96px; font-family: Consolas, monospace; font-size: 12px;
   margin-top: 8px; border: 1px solid #9a958a; border-radius: 4px; padding: 6px;
   background: #fffdf6; resize: vertical;
+}
+
+/* responsive: stack panes and wrap bars on narrow screens / phones */
+@media (max-width: 1000px) {
+  #app { max-width: 100%; height: auto; min-height: 100vh; }
+  .main { grid-template-columns: 1fr; }
+  .statstrip { grid-template-columns: 1fr 1fr; }
+  .menubar { flex-wrap: wrap; }
+  .pane-body { max-height: 60vh; }
+  .levelgrid { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr 1fr; }
+  .quiz-opts, .ach-list { grid-template-columns: 1fr; }
+  button.btn { padding: 9px 14px; }
+  .advisor { right: 6px; bottom: 6px; }
+  .advisor-img { height: 92px; }
+  .advisor-bubble { max-width: 200px; }
+}
+
+/* phones proper: one column of everything, scrollable data grid, tiny Hal.
+ * These two blocks live at the END of the file on purpose — media queries have
+ * no extra specificity, so they must come after every base rule they override. */
+@media (max-width: 480px) {
+  .start { padding: 12px 12px; }
+  .subbar { flex-wrap: wrap; gap: 6px; }
+  .statstrip { grid-template-columns: 1fr 1fr; }
+  .stat .v { font-size: 15px; }
+  .menu > .menu-label { padding: 6px 8px; }
+  .modal .body { padding: 12px 12px; }
+  .dash-grid { grid-template-columns: 1fr; }
+  table.grid th, table.grid td { padding: 2px 4px; }
+  .pane-body { max-height: 52vh; -webkit-overflow-scrolling: touch; }
+  .welcome-img { width: 60px; height: 60px; }
+  .advisor-img { height: 56px; }
+  .advisor-bubble { max-width: 150px; font-size: 12px; }
+  .toast { max-width: 92vw; text-align: center; }
+  .resume-bar { font-size: 12px; }
+  .intro-video { max-height: 60vh; }
 }

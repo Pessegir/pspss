@@ -10,9 +10,8 @@
 (function (root) {
   'use strict';
 
-  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
-  const makeRNG = RNGlib.RNG;
-  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const common = typeof require !== 'undefined' ? require('./levels.common') : root.PSPSS_levels_common;
+  const { makeRNG, mean } = common;
 
   // Shared evaluator: a genuine JZS Bayesian t-test honouring the state's prior
   // width, one-sided flag, and BF01 flip.
@@ -120,22 +119,11 @@
   // ignores them); the Bayesian tools are the real levers. Generic decoy data lets
   // the flag-based tools show up.
   const ALL_QRP = ['set-prior', 'one-sided-prior', 'collect-more-bayes', 'report-bf01', 'prior-robustness', 'choose-test', 'fit-lmm', 'add-control', 'median-split', 'set-aggregation', 'spec-multiverse', 'pick-outcome', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
-  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
-  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
-  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
-  LEVELS.forEach((l) => {
-    l.truth = FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' };
-    if (l.lmm === undefined) l.lmm = true;
-    if (l.moderator === undefined) l.moderator = 'mod';
-    if (l.aggregable === undefined) l.aggregable = true;
-    if (l.tests === undefined) l.tests = GENERIC_TESTS;
-    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
-    if (l.specs === undefined) l.specs = GENERIC_SPECS;
-    l.allowedTools = ALL_QRP;
+  common.finish(LEVELS, {
+    defaults: { lmm: true, moderator: 'mod', aggregable: true, tests: common.GENERIC.tests, candidateControls: common.GENERIC.controls, specs: common.GENERIC.specs },
+    set: { allowedTools: ALL_QRP },
+    truth: (l) => (FALSE_POSITIVE[l.id] ? { exists: false } : { exists: true, higher: 'B' }),
   });
-
-  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
-  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
 
   const api = { C3_LEVELS: LEVELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

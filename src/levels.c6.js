@@ -9,10 +9,8 @@
 (function (root) {
   'use strict';
 
-  const RNGlib = typeof require !== 'undefined' ? require('./rng') : root.PSPSS_rng;
-  const makeRNG = RNGlib.RNG;
-  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-  const groupArrays = (rows) => { const A = [], B = []; rows.forEach((r) => (r.group === 'A' ? A : B).push(r.vals.primary)); return { A, B }; };
+  const common = typeof require !== 'undefined' ? require('./levels.common') : root.PSPSS_levels_common;
+  const { makeRNG, mean, groupArrays } = common;
 
   const LEVELS = [
     // ----------------------------------------------------------- collider (post-treatment)
@@ -294,26 +292,11 @@
   // evaluate() honours only its own flag, so non-matching tools are inert. All C6
   // "effects" are manufactured — no level has a real causal effect.
   const ALL_QRP = ['add-control', 'report-coefficient', 'use-instrument', 'spec-multiverse', 'choose-test', 'median-split', 'set-aggregation', 'control-covariate', 'explore-subgroups', 'recruit-more', 'robustness-check', 'refine-sample', 'winsorize', 'log-transform'];
-  const GENERIC_TESTS = [{ id: 'welch', label: "Welch's t-test (unequal var)" }, { id: 'student', label: "Student's t-test (equal var)" }, { id: 'mann', label: 'Mann-Whitney U (nonparametric)' }];
-  const GENERIC_CONTROLS = [{ id: 'covA', label: 'Baseline Covariate' }, { id: 'covB', label: 'Another Covariate' }];
-  const GENERIC_SPECS = [{ label: 'Model 1 (no covariates)', controls: [] }, { label: 'Model 2', controls: [] }, { label: 'Model 3', controls: [] }];
-  const GENERIC_COEFS = [{ id: 'treat', label: 'Treatment' }, { id: 'covA', label: 'Covariate A' }];
-  const GENERIC_INSTRUMENTS = [{ id: 'instA', label: 'Instrument A' }, { id: 'instB', label: 'Instrument B' }];
-  LEVELS.forEach((l) => {
-    if (l.moderator === undefined) l.moderator = 'mod';
-    if (l.aggregable === undefined) l.aggregable = true;
-    if (l.tests === undefined) l.tests = GENERIC_TESTS;
-    if (l.candidateControls === undefined) l.candidateControls = GENERIC_CONTROLS;
-    if (l.specs === undefined) l.specs = GENERIC_SPECS;
-    if (l.coefficients === undefined) l.coefficients = GENERIC_COEFS;
-    if (l.instruments === undefined) l.instruments = GENERIC_INSTRUMENTS;
-    l.allowedTools = ALL_QRP;
-    l.truth = { exists: false }; // every C6 effect is a manufactured artefact
+  common.finish(LEVELS, {
+    defaults: { moderator: 'mod', aggregable: true, tests: common.GENERIC.tests, candidateControls: common.GENERIC.controls, specs: common.GENERIC.specs, coefficients: common.GENERIC.coefs, instruments: common.GENERIC.instruments },
+    set: { allowedTools: ALL_QRP },
+    truth: () => ({ exists: false }), // every C6 effect is a manufactured artefact
   });
-
-  // register onto the shared LEVELS array
-  const levelsApi = typeof require !== 'undefined' ? require('./levels') : root.PSPSS_levels;
-  LEVELS.forEach((l) => levelsApi.LEVELS.push(l));
 
   const api = { C6_LEVELS: LEVELS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
