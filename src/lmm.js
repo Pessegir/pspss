@@ -185,11 +185,12 @@
       simplex.push(x);
     }
     let fv = simplex.map(f);
+    let converged = false;
     for (let iter = 0; iter < maxIter; iter++) {
       const order = fv.map((v, i) => i).sort((a, b) => fv[a] - fv[b]);
       simplex = order.map((i) => simplex[i]);
       fv = order.map((i) => fv[i]);
-      if (Math.abs(fv[n] - fv[0]) < tol) break;
+      if (Math.abs(fv[n] - fv[0]) < tol) { converged = true; break; }
       // centroid of all but worst
       const cen = new Array(n).fill(0);
       for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cen[j] += simplex[i][j] / n;
@@ -216,7 +217,7 @@
     }
     let best = 0;
     for (let i = 1; i <= n; i++) if (fv[i] < fv[best]) best = i;
-    return { x: simplex[best], f: fv[best] };
+    return { x: simplex[best], f: fv[best], converged };
   }
 
   // ---- public fit ----------------------------------------------------------
@@ -323,6 +324,7 @@
       nGroups,
       blups,
       icc,
+      converged: !!res.converged, // REML optimizer met its tolerance (vs. iteration cap)
     };
   }
 

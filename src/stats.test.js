@@ -68,6 +68,35 @@ assert('p ~ 1 (>0.8) for identical groups', mw2.p > 0.8);
 // must return p = 1, not NaN (mirrors the wilcoxonSignedRank guard).
 const mwConst = S.mannWhitneyU([5, 5, 5, 5], [5, 5, 5, 5]);
 assert('all-constant groups give p = 1, z = 0 (no NaN)', mwConst.p === 1 && mwConst.z === 0);
+// Small-n accuracy vs the EXACT permutation distribution (enumerated here —
+// an independent implementation, not a re-derivation of the formula).
+{
+  const a = [12, 15, 17, 21], b = [14, 19, 23, 26];
+  const mws = S.mannWhitneyU(a, b);
+  const all = a.concat(b);
+  // U by direct pair-counting for the observed assignment
+  let uPairs = 0;
+  for (const x of a) for (const y of b) uPairs += x < y ? 1 : x === y ? 0.5 : 0;
+  const uObs = Math.min(uPairs, a.length * b.length - uPairs);
+  assert('U equals direct pair-count', mws.U === uObs);
+  // exact two-sided p over all C(8,4) group assignments
+  const combos = [];
+  (function rec(start, pick) {
+    if (pick.length === 4) { combos.push(pick.slice()); return; }
+    for (let i = start; i < 8; i++) { pick.push(i); rec(i + 1, pick); pick.pop(); }
+  })(0, []);
+  let le = 0;
+  for (const c of combos) {
+    const as = c.map((i) => all[i]);
+    const bs = all.filter((_, i) => c.indexOf(i) === -1);
+    let u = 0;
+    for (const x of as) for (const y of bs) u += x < y ? 1 : x === y ? 0.5 : 0;
+    if (Math.min(u, 16 - u) <= uObs) le++;
+  }
+  const pExact = le / combos.length;
+  assert('MWU approx p within 0.05 of exact (n=4,4)', Math.abs(mws.p - pExact) < 0.05,
+    `approx ${mws.p.toFixed(4)} vs exact ${pExact.toFixed(4)}`);
+}
 
 console.log('\nWilcoxon signed-rank:');
 const wsr = S.wilcoxonSignedRank([10, 12, 14, 16, 18], [1, 2, 3, 4, 5]);
@@ -84,6 +113,27 @@ assert('p < 0.1 for consistent diffs', wsr.p < 0.1);
   const zNoTie = (tied.W - muW + 0.5) / sigmaNoTie;
   const pNoTie = 2 * (1 - S.normalCDF(Math.abs(zNoTie)));
   assert('Wilcoxon tie correction shrinks p vs. uncorrected', tied.p < pNoTie);
+}
+// Small-n accuracy vs the EXACT sign-flip distribution (2^8 enumerations;
+// diffs 1..8 in magnitude are all distinct, so rank(|d|) = |d|).
+{
+  const diffs = [1, -2, 3, 4, 5, 6, -7, 8];
+  const x2 = [10, 11, 12, 13, 14, 15, 16, 17];
+  const x1 = x2.map((v, i) => v + diffs[i]);
+  const ws = S.wilcoxonSignedRank(x1, x2);
+  const absd = diffs.map(Math.abs);
+  const wPlus = diffs.reduce((s, d, i) => s + (d > 0 ? absd[i] : 0), 0);
+  const wObs = Math.min(wPlus, 36 - wPlus);
+  assert('W equals the hand-ranked statistic', ws.W === wObs);
+  let cnt = 0;
+  for (let m = 0; m < 256; m++) {
+    let wp = 0;
+    for (let i = 0; i < 8; i++) if (m & (1 << i)) wp += absd[i];
+    if (Math.min(wp, 36 - wp) <= wObs) cnt++;
+  }
+  const pExact = cnt / 256;
+  assert('Wilcoxon approx p within 0.03 of exact (n=8)', Math.abs(ws.p - pExact) < 0.03,
+    `approx ${ws.p.toFixed(4)} vs exact ${pExact.toFixed(4)}`);
 }
 
 console.log('\nPearson correlation:');
@@ -138,6 +188,40 @@ approx('ols intercept', olsRes.beta[0], 7, 1e-6); approx('ols slope', olsRes.bet
   const weak = S.tsls(y, x, [zWeak]);
   assert('strong instrument: first-stage F > 10', strong.firstStageF > 10);
   assert('weak instrument: first-stage F < 10', weak.firstStageF < 10);
+}
+// 2SLS WITH exogenous controls — previously untested (stats.js's controls
+// branch). Two independent anchors:
+//  (1) Frisch–Waugh–Lovell: partial the controls out of y, x AND z; the
+//      just-identified IV on the residuals equals the full 2SLS coefficient.
+//  (2) Consistency: with a strong instrument + confounding, 2SLS recovers the
+//      true structural effect where OLS is biased.
+{
+  const rng = (s) => { let a = s; return () => { a = (a * 1103515245 + 12345) & 0x7fffffff; return a / 0x7fffffff; }; };
+  const r = rng(77);
+  const n = 400, z = [], c = [], x = [], y = [];
+  const TRUE_BETA = 1.5;
+  for (let i = 0; i < n; i++) {
+    const u = r() - 0.5;               // unobserved confounder
+    const zi = r() < 0.5 ? 0 : 1;      // instrument
+    const ci = r() * 2 - 1;            // exogenous control
+    const xi = 1.5 * zi + 0.8 * ci + 2 * u + 0.3 * (r() - 0.5);
+    z.push(zi); c.push(ci); x.push(xi);
+    y.push(TRUE_BETA * xi + 1.2 * ci + 3 * u + 0.2 * (r() - 0.5));
+  }
+  const iv = S.tsls(y, x, [z], [c]);
+  // (1) FWL identity
+  const residOn = (v) => { const f = S.ols(v, [c]); return v.map((vi, i) => vi - (f.beta[0] + f.beta[1] * c[i])); };
+  const yt = residOn(y), xt = residOn(x), zt = residOn(z);
+  const cov = (p1, p2) => { const m1 = S.mean(p1), m2 = S.mean(p2); let s = 0; for (let i = 0; i < n; i++) s += (p1[i] - m1) * (p2[i] - m2); return s / (n - 1); };
+  approx('2SLS w/ controls == FWL-partialled Wald ratio', iv.effect, cov(zt, yt) / cov(zt, xt), 1e-9);
+  // (2) consistency where OLS is confounded
+  const olsBeta = S.ols(y, [x, c]).beta[1];
+  assert('2SLS w/ controls recovers the true effect (|bias| < 0.15)', Math.abs(iv.effect - TRUE_BETA) < 0.15,
+    `iv ${iv.effect.toFixed(3)} vs true ${TRUE_BETA}`);
+  assert('...where OLS is visibly biased upward by the confounder', olsBeta > TRUE_BETA + 0.2,
+    `ols ${olsBeta.toFixed(3)}`);
+  assert('first-stage F with controls present is finite and strong', Number.isFinite(iv.firstStageF) && iv.firstStageF > 10,
+    `F=${iv.firstStageF && iv.firstStageF.toFixed(1)}`);
 }
 
 console.log('\nEffect size & confidence intervals:');

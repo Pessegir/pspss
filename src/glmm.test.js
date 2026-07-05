@@ -68,6 +68,7 @@ function close(a, b, tol) { return Math.abs(a - b) <= tol; }
   ok('cbpp returns one BLUP per herd (15)', f.blups.length === 15, 'blups=' + f.blups.length);
   // intercept SE ~ 0.231 (looser tolerance for the hand-rolled covariance)
   ok('cbpp intercept SE ~ 0.231', close(f.ses[0], 0.231, 0.05), 'se0=' + f.ses[0].toFixed(3));
+  ok('cbpp variance optimizer reports convergence', f.converged === true);
 }
 
 // --- 4. OLRE inflates the SE of a within-cluster effect on overdispersed counts ---
