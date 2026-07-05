@@ -330,3 +330,10 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   background: #fffbe9; border: 2px solid #b45309; border-radius: 10px;
   padding: 12px 14px; line-height: 1.5; font-style: italic; margin-bottom: 8px;
 }
+
+/* ---- resume banner (start screen) ---- */
+.resume-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 8px;
+  padding: 8px 12px; margin: 10px 0 2px; font-size: 13px;
+}

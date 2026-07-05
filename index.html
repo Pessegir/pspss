@@ -353,6 +353,13 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
   padding: 12px 14px; line-height: 1.5; font-style: italic; margin-bottom: 8px;
 }
 
+/* ---- resume banner (start screen) ---- */
+.resume-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #fffbe9; border: 2px solid #b45309; border-radius: 8px;
+  padding: 8px 12px; margin: 10px 0 2px; font-size: 13px;
+}
+
 </style>
 </head>
 <body>
@@ -6022,6 +6029,53 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     try { return Object.assign(careerDefaults(), JSON.parse(localStorage.getItem('pspss_career') || '{}')); } catch (e) { return careerDefaults(); }
   }
   function save() { try { localStorage.setItem('pspss_progress', JSON.stringify(App.progress)); } catch (e) {} }
+  // ---- mid-level resume ----
+  // The engine is deterministic (seeded data AND seeded event rolls), so an
+  // in-progress study is just {level, seed, mode, action list}: replaying the
+  // actions on a fresh state reconstructs it exactly. Saved after every move,
+  // cleared when the study ends. Prereg mode is excluded (its commitment flow
+  // is a one-shot; resuming it would dodge the "no take-backs" rule).
+  function getResume() {
+    try {
+      const d = JSON.parse(localStorage.getItem('pspss_resume') || 'null');
+      if (d && d.v === 1 && d.levelId && Array.isArray(d.actions) && d.actions.length) return d;
+    } catch (e) {}
+    return null;
+  }
+  function saveResume() {
+    if (!App.state || App.state.finished || App.prereg) { clearResume(); return; }
+    const actions = App.state.log.filter((l) => l.toolId).map((l) => ({ toolId: l.toolId, payload: l.payload }));
+    if (!actions.length) { clearResume(); return; }
+    try {
+      localStorage.setItem('pspss_resume', JSON.stringify({
+        v: 1, levelId: App.state.level.id, seed: App.state.seed,
+        mode: App.state.mode, gauntlet: !!App.gauntlet, actions,
+      }));
+    } catch (e) {}
+  }
+  function clearResume() { try { localStorage.removeItem('pspss_resume'); } catch (e) {} }
+  function resumeStudy() {
+    const d = getResume();
+    if (!d) return;
+    const idx = LEVELS.findIndex((l) => l.id === d.levelId);
+    if (idx < 0) { clearResume(); renderStart(); return; }
+    App.levelIndex = idx;
+    App.gauntlet = !!d.gauntlet;
+    App.gauntletSeed = d.gauntlet ? d.seed : null;
+    App.mode = d.mode === 'pure' ? 'pure' : 'tenure';
+    App.state = E.newState(LEVELS[idx], d.seed, App.mode);
+    App.state._committed = false;
+    const steps = [];
+    for (const a of d.actions) {
+      const r = E.applyTool(App.state, a.toolId, a.payload);
+      if (!r || r.error) break;
+      steps.push({ analysis: r.analysis, entry: App.state.log[App.state.log.length - 1], kind: (E.TOOLS.find((t) => t.id === a.toolId) || {}).kind });
+      if (App.state.finished) break;
+    }
+    renderGame();
+    steps.forEach((s) => appendOutput(s.analysis, s.entry, s.kind));
+    toast('Study resumed. The data pretends not to notice.');
+  }
   function saveAch() { try { localStorage.setItem('pspss_ach', JSON.stringify(App.achievements)); localStorage.setItem('pspss_career', JSON.stringify(App.career)); } catch (e) {} }
   const K = (typeof PSPSS_knowledge !== 'undefined') ? PSPSS_knowledge : null;
 
@@ -6066,6 +6120,19 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
       el('button', { class: 'btn ghost', onclick: showWelcome, title: 'Prof. Hal explains the game (poorly)' }, ['👋 Welcome']),
     ]);
     wrap.appendChild(tools);
+
+    // In-progress study? Offer to pick it back up (survives reload AND exit).
+    const rd = getResume();
+    if (rd) {
+      const rlv = levelById(rd.levelId);
+      if (rlv) {
+        wrap.appendChild(el('div', { class: 'resume-bar' }, [
+          el('span', { text: `⏸ In-progress study: “${rlv.title}” — ${rd.actions.length} action${rd.actions.length === 1 ? '' : 's'} in.` }),
+          el('button', { class: 'btn', onclick: resumeStudy }, ['▶ Resume']),
+          el('button', { class: 'btn ghost', onclick: () => { clearResume(); renderStart(); toast('Study abandoned. The file drawer thanks you.'); } }, ['Discard']),
+        ]));
+      }
+    }
 
     wrap.appendChild(el('div', { class: 'hint', style: 'margin:12px 0 4px',
       html: 'Each study is rigged to be non-significant. Use the menus to <i>diagnose</i> the flaw (free), then apply the right Questionable Research Practice to torture it into significance. Fewer moves = more stars.' }));
@@ -6183,6 +6250,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     // random sample, so the rigged solution is not guaranteed to crack it.
     App.state = E.newState(LEVELS[idx], opts.gauntlet ? opts.seed : undefined, App.mode);
     App.state._committed = false;
+    clearResume(); // a fresh study supersedes any dangling one
     renderGame();
     showBriefing();
   }
@@ -6370,6 +6438,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     renderData();
     renderStatStrip();
     appendOutput(res.analysis, App.state.log[App.state.log.length - 1], tool.kind);
+    saveResume(); // clears itself when the study just ended
 
     if (App.prereg && App.state._committedPending) {
       App.state._committedPending = false;
@@ -6731,7 +6800,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
     body.appendChild(el('h2', { text: 'Report the null result?' }));
     body.appendChild(el('div', { text: 'You will report honestly that there was no significant effect. This is good science. It is bad for your career. Proceed?' }));
     const row = el('div', { class: 'btnrow' });
-    row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); const r = E.reportNull(App.state); showEnd('honest', r.analysis); } }, ['Report it honestly']));
+    row.appendChild(el('button', { class: 'btn', onclick: () => { closeModal(); const r = E.reportNull(App.state); clearResume(); showEnd('honest', r.analysis); } }, ['Report it honestly']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Keep torturing the data']));
     body.appendChild(row);
     modal('Report Null Result', body);
@@ -7043,7 +7112,7 @@ a.link { color: #2c5685; cursor: pointer; text-decoration: underline; }
 
     const row = el('div', { class: 'btnrow' });
     if (cleared > 0) row.appendChild(el('button', { class: 'btn', onclick: replicationEpilogue }, ['Run Replication Crisis']));
-    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.confirmWipe = false; App.progress = {}; App.achievements = []; App.career = careerDefaults(); save(); saveAch(); showDashboard(); toast('Career wiped. A fresh CV.'); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
+    row.appendChild(el('button', { class: 'btn ghost', onclick: () => { if (App.confirmWipe) { App.confirmWipe = false; App.progress = {}; App.achievements = []; App.career = careerDefaults(); save(); saveAch(); clearResume(); showDashboard(); toast('Career wiped. A fresh CV.'); } else { App.confirmWipe = true; toast('Tap "Wipe career" again to confirm.'); } } }, ['Wipe career']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: showExport }, ['⇩ Export save']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: showImport }, ['⇧ Import save']));
     row.appendChild(el('button', { class: 'btn ghost', onclick: closeModal }, ['Close']));

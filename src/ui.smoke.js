@@ -283,5 +283,29 @@ clickBtn('Import');
 check('import round-trips the save', JSON.parse(store['pspss_career'] || '{}').publications >= 1 && JSON.parse(store['pspss_ach'] || '[]').length >= 1);
 clickBtn('Close');
 
+console.log('\nMid-level resume:');
+card('The One Bad Apple').fire('click');
+clickBtn('Begin Analysis');
+clickItem('Reframe Hypothesis'); // HARK: 1 move; the only tool that does NOT win the outlier level
+check('a move creates a resume save', !!store['pspss_resume']);
+const resumeBlob = JSON.parse(store['pspss_resume']);
+check('resume save records level + seed + the action', resumeBlob.levelId === 'outlier' && typeof resumeBlob.seed === 'number' && resumeBlob.actions.length === 1);
+clickItem('Exit to Campaign');
+check('start screen offers to resume (survives exit/reload)', appNode.textContent.includes('In-progress study'));
+clickBtn('▶ Resume');
+check('resume restores the level', (document.querySelector('.level-info') || {})._html && document.querySelector('.level-info')._html.includes('The One Bad Apple'));
+check('resume restores the move count', document.querySelector('#statstrip').textContent.includes('1 / '));
+check('resume replays the output pane', document.querySelector('#output').children.length >= 1);
+clickItem('Exit to Campaign');
+clickBtn('Discard');
+check('discard clears the save', !store['pspss_resume']);
+check('discard removes the banner', !appNode.textContent.includes('In-progress study'));
+// finishing a study must clear the save too
+card('The One Bad Apple').fire('click');
+clickBtn('Begin Analysis');
+clickItem('Refine Sample');
+check('winning clears the resume save', !store['pspss_resume']);
+clickBtn('Skip to Map');
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);

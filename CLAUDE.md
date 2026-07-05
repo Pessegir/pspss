@@ -110,6 +110,12 @@ what lets the game logic be unit-tested headlessly. Math libs load before `engin
   instead of the pinned tuned one — the QRP is not guaranteed to crack it (the "fish doesn't always
   bite" replay/hard mode). Practice only: `recordResult` is skipped so it never touches the career.
   This does NOT relax the no-hints invariant — it adds variance, not assistance.
+  **Mid-level resume** (`pspss_resume`): after every move the study is saved as
+  `{levelId, seed, mode, gauntlet, actions}` and reconstructed by *deterministic replay* through
+  `applyTool` (data AND event rolls are seeded, so the replay is exact — including a fabricate
+  retraction). Offered as a start-screen banner (survives reload and Exit-to-Campaign); cleared on
+  win/retract/honest/restart/discard/wipe. Prereg-mode studies are never saved (its one-shot
+  commitment must stay one-shot).
 
 ### Key invariants
 
